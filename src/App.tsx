@@ -17,8 +17,8 @@ import type {
 import { firebaseDb } from "./lib/firebase";
 
 
-import imagemPlanilha from "../public/Imagem-planilha.png";
-import prefeituraLogo from "../public/prefeitura.png";
+const imagemPlanilha = "/Imagem-planilha.png";
+const prefeituraLogo = "/prefeitura.png";
 
 type Perfil =
   | "secretaria"
