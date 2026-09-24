@@ -260,72 +260,6 @@ function obterHorarioAtual(): string {
   );
 }
 
-function preparacaoJaRealizadaAntesNoMes(
-  preparacao: string,
-  data: string,
-  registros: RegistroCozinha[],
-  registroIdAtual: number = Number.MAX_SAFE_INTEGER
-): boolean {
-  const preparacaoNormalizada = normalizarTexto(preparacao);
-  const dataNormalizada = normalizarData(data);
-  const mes = dataNormalizada.substring(0, 7);
-
-  if (!preparacaoNormalizada || !mes || !dataNormalizada) {
-    return false;
-  }
-
-  return registros.some((registro) => {
-    const dataRegistro = normalizarData(registro.data);
-
-    if (
-      !dataRegistro ||
-      dataRegistro.substring(0, 7) !== mes
-    ) {
-      return false;
-    }
-
-    if (
-      normalizarTexto(registro.servida) !==
-      preparacaoNormalizada
-    ) {
-      return false;
-    }
-
-    if (Number(registro.id) === Number(registroIdAtual)) {
-      return false;
-    }
-
-    if (dataRegistro < dataNormalizada) {
-      return true;
-    }
-
-    return (
-      dataRegistro === dataNormalizada &&
-      Number(registro.id) < Number(registroIdAtual)
-    );
-  });
-}
-
-function mesmaCompetenciaMensal(
-  data1: string,
-  data2: string
-): boolean {
-  if (!data1 || !data2) {
-    return false;
-  }
-
-  return (
-    normalizarData(data1).substring(
-      0,
-      7
-    ) ===
-    normalizarData(data2).substring(
-      0,
-      7
-    )
-  );
-}
-
 /* =========================================================
    APP PRINCIPAL
 ========================================================= */
@@ -1485,8 +1419,6 @@ function App() {
                   erroCardapio
                 }
                 grupos={grupos}
-                carregandoGrupos={carregandoGrupos}
-                erroGrupos={erroGrupos}
                 funcionarioLogado={funcionarioLogado}
               />
             )}
@@ -1519,7 +1451,6 @@ function App() {
             <PlanilhaFrontEnd
               cardapio={cardapio}
               avaliacoes={avaliacoes}
-              registros={registrosCozinha}
             />
           )}
 
@@ -1967,8 +1898,6 @@ function Cozinha({
   carregandoCardapio,
   erroCardapio,
   grupos,
-  carregandoGrupos,
-  erroGrupos,
   funcionarioLogado,
 }: {
   registros: RegistroCozinha[];
@@ -1977,8 +1906,6 @@ function Cozinha({
   carregandoCardapio: boolean;
   erroCardapio: string;
   grupos: Grupo[];
-  carregandoGrupos: boolean;
-  erroGrupos: string;
   funcionarioLogado: { nome: string; login: string } | null;
 }) {
   const [data, setData] =
@@ -3551,7 +3478,6 @@ function PlanilhaFrontEnd({
 }: {
   cardapio: Cardapio[];
   avaliacoes: Avaliacao[];
-  registros: RegistroCozinha[];
 }) {
   const meses = [
     { value: "01", label: "JANEIRO" },
@@ -3578,14 +3504,6 @@ function PlanilhaFrontEnd({
     )?.label || mesSelecionado.substring(5, 7);
 
   const linhasPlanilha = useMemo(() => {
-    const ordemRefeicoes: Record<Refeicao, number> = {
-      "Desjejum": 1,
-      "Lanche da manhã": 2,
-      "Almoço": 3,
-      "Lanche da tarde": 4,
-      "Jantar": 5,
-    };
-
     const refeicaoCanonica = (valor: unknown): Refeicao | "" => {
       const normalizada = normalizarRefeicao(valor);
       return REFEICOES.includes(normalizada as Refeicao)
