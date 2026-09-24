@@ -308,8 +308,6 @@ function App() {
   ] = useState<Cardapio[]>([]);
 
   const [grupos, setGrupos] = useState<Grupo[]>([]);
-  const [carregandoGrupos, setCarregandoGrupos] = useState(true);
-  const [erroGrupos, setErroGrupos] = useState("");
 
   /* =========================================================
      CARREGAR REGISTROS DE REFEIÇÕES DO FIREBASE
@@ -421,9 +419,6 @@ function App() {
 
     async function carregarGrupos() {
       if (!logado) return;
-      setCarregandoGrupos(true);
-      setErroGrupos("");
-
       const { data, error } = await firebaseDb
         .from("grupos")
         .select("nome, grupo");
@@ -433,8 +428,6 @@ function App() {
       if (error) {
         console.error("ERRO AO CARREGAR GRUPOS:", error);
         setGrupos([]);
-        setErroGrupos(`Erro ao carregar grupos: ${error.message}`);
-        setCarregandoGrupos(false);
         return;
       }
 
@@ -443,7 +436,6 @@ function App() {
         .filter(Boolean);
 
       setGrupos(Array.from(new Set(gruposNormalizados)));
-      setCarregandoGrupos(false);
     }
 
     carregarGrupos();
@@ -3474,7 +3466,6 @@ function DashboardResultados({
 function PlanilhaFrontEnd({
   cardapio,
   avaliacoes,
-  registros,
 }: {
   cardapio: Cardapio[];
   avaliacoes: Avaliacao[];
