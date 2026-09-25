@@ -1,8 +1,13 @@
-const CACHE_NAME = "alimentacao-escolar-v1";
+const CACHE_NAME = "alimentacao-escolar-v2";
 
 const APP_SHELL = [
   "/",
-  "/manifest.webmanifest"
+  "/manifest.webmanifest",
+  "/icon-192.png",
+  "/icon-512.png",
+  "/apple-touch-icon.png",
+  "/favicon-32.png",
+  "/logo.png"
 ];
 
 self.addEventListener("install", (event) => {

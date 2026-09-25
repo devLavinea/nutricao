@@ -20,7 +20,7 @@ import { firebaseDb } from "./lib/firebase";
 const imagemPlanilha = "/Imagem-planilha.png";
 const prefeituraLogo = "/prefeitura.png";
 // A identidade visual do aplicativo/PWA é a logo principal do sistema.
-const logoAplicativo = "/logo.png";
+const logoAplicativo = "/icon-512.png";
 
 type Perfil =
   | "secretaria"
