@@ -372,26 +372,11 @@ function App() {
       null
     );
 
-  const [
-    appInstalado,
-    setAppInstalado,
-  ] = useState(() => {
-    return (
-      localStorage.getItem(
-        "app_instalado"
-      ) === "sim"
-    );
-  });
-
-  const [
-    notificacoesAtivas,
-    setNotificacoesAtivas,
-  ] = useState(() => {
-    return (
-      localStorage.getItem(
-        "notificacoes_ativas"
-      ) === "sim"
-    );
+  const [notificacoesAtivas, setNotificacoesAtivas] = useState(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      return false;
+    }
+    return Notification.permission === "granted";
   });
 
   const [
@@ -676,14 +661,6 @@ function App() {
           }
         ).standalone === true;
 
-      if (standalone) {
-        setAppInstalado(true);
-
-        localStorage.setItem(
-          "app_instalado",
-          "sim"
-        );
-      }
     }
 
     verificarInstalado();
@@ -698,17 +675,9 @@ function App() {
 
   async function instalarAplicativo() {
     if (!installPrompt) {
-      setAppInstalado(true);
-
-      localStorage.setItem(
-        "app_instalado",
-        "sim"
-      );
-
       alert(
-        "Se o aplicativo já foi instalado, você pode marcar esta opção. Caso ainda não tenha instalado, use o menu do navegador e escolha 'Adicionar à tela inicial'."
+        "Use o menu do navegador e escolha 'Adicionar à tela inicial'."
       );
-
       return;
     }
 
@@ -718,18 +687,6 @@ function App() {
       const resultado =
         await installPrompt.userChoice;
 
-      if (
-        resultado.outcome ===
-        "accepted"
-      ) {
-        setAppInstalado(true);
-
-        localStorage.setItem(
-          "app_instalado",
-          "sim"
-        );
-      }
-
       setInstallPrompt(null);
     } catch {
       alert(
@@ -738,62 +695,84 @@ function App() {
     }
   }
 
-  function confirmarAplicativoInstalado() {
-    setAppInstalado(true);
-
-    localStorage.setItem(
-      "app_instalado",
-      "sim"
-    );
-  }
-
   /* =========================================================
      NOTIFICAÇÕES
   ========================================================= */
 
   async function ativarNotificacoes() {
     if (!("Notification" in window)) {
-      alert(
-        "Este navegador não oferece suporte a notificações."
-      );
-
+      setNotificacoesAtivas(false);
+      alert("Este navegador não oferece suporte a notificações.");
       return;
     }
 
     try {
-      const permissao =
-        await Notification.requestPermission();
+      let permissao = Notification.permission;
 
-      if (
-        permissao === "granted"
-      ) {
+      if (permissao === "default") {
+        permissao = await Notification.requestPermission();
+      }
+
+      if (permissao === "granted") {
         setNotificacoesAtivas(true);
+        localStorage.setItem("notificacoes_ativas", "sim");
 
-        localStorage.setItem(
-          "notificacoes_ativas",
-          "sim"
-        );
+        new Notification("Alimentação Escolar", {
+          body:
+            perfil === "cozinha"
+              ? "Notificações ativadas. Você receberá lembretes para registrar as refeições."
+              : "Notificações ativadas. Você receberá lembretes sobre as avaliações.",
+        });
+        return;
+      }
 
-        new Notification(
-          "Alimentação Escolar",
-          {
-            body:
-              perfil === "cozinha"
-                ? "Notificações ativadas. Você receberá lembretes para registrar as refeições."
-                : "Notificações ativadas. Você receberá lembretes sobre as avaliações.",
-          }
+      setNotificacoesAtivas(false);
+      localStorage.removeItem("notificacoes_ativas");
+
+      if (permissao === "denied") {
+        alert(
+          "As notificações estão bloqueadas neste dispositivo. Para ativá-las, permita as notificações nas configurações do navegador ou do celular."
         );
       } else {
         alert(
-          "As notificações não foram autorizadas. Você pode ativá-las nas configurações do navegador."
+          "As notificações não foram autorizadas. Você pode tentar ativá-las novamente nas configurações do navegador."
         );
       }
-    } catch {
+    } catch (erro) {
+      console.error("ERRO AO ATIVAR NOTIFICAÇÕES:", erro);
+      setNotificacoesAtivas(Notification.permission === "granted");
       alert(
-        "Não foi possível ativar as notificações."
+        "Não foi possível ativar as notificações. Verifique as permissões do navegador ou do celular."
       );
     }
   }
+
+  useEffect(() => {
+    if (!("Notification" in window)) {
+      setNotificacoesAtivas(false);
+      return;
+    }
+
+    const atualizarPermissao = () => {
+      const concedida = Notification.permission === "granted";
+      setNotificacoesAtivas(concedida);
+
+      if (!concedida) {
+        localStorage.removeItem("notificacoes_ativas");
+      } else {
+        localStorage.setItem("notificacoes_ativas", "sim");
+      }
+    };
+
+    atualizarPermissao();
+    window.addEventListener("focus", atualizarPermissao);
+    document.addEventListener("visibilitychange", atualizarPermissao);
+
+    return () => {
+      window.removeEventListener("focus", atualizarPermissao);
+      document.removeEventListener("visibilitychange", atualizarPermissao);
+    };
+  }, []);
 
   useEffect(() => {
     if (!logado || !perfil) {
@@ -1235,17 +1214,11 @@ function App() {
         }
         onSenhaChange={setSenha}
         onSubmit={fazerLogin}
-        appInstalado={
-          appInstalado
-        }
         installPrompt={
           installPrompt
         }
         onInstalar={
           instalarAplicativo
-        }
-        onJaInstalado={
-          confirmarAplicativoInstalado
         }
         notificacoesAtivas={
           notificacoesAtivas
@@ -1466,10 +1439,8 @@ function Login({
   onUsuarioChange,
   onSenhaChange,
   onSubmit,
-  appInstalado,
   installPrompt,
   onInstalar,
-  onJaInstalado,
   notificacoesAtivas,
   onAtivarNotificacoes,
 }: {
@@ -1485,12 +1456,10 @@ function Login({
   onSubmit: (
     event: FormEvent<HTMLFormElement>
   ) => void;
-  appInstalado: boolean;
   installPrompt:
     | BeforeInstallPromptEvent
     | null;
   onInstalar: () => void;
-  onJaInstalado: () => void;
   notificacoesAtivas: boolean;
   onAtivarNotificacoes: () => void;
 }) {
@@ -1601,80 +1570,35 @@ function Login({
         </div>
 
         <div className="mt-5 space-y-3">
-          {!appInstalado ? (
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-              <div className="flex gap-3">
-                <span className="text-2xl">
-                  📲
-                </span>
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+            <div className="flex gap-3">
+              <span className="text-2xl">📲</span>
 
-                <div className="flex-1">
-                  <p className="font-bold text-emerald-800">
-                    Adicione o aplicativo
+              <div className="flex-1">
+                <p className="font-bold text-emerald-800">
+                  Adicione o aplicativo
+                </p>
+
+                <p className="mt-1 text-sm text-emerald-700">
+                  Tenha o sistema na tela inicial do celular para acessar mais rapidamente.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={onInstalar}
+                  className="mt-3 w-full rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white"
+                >
+                  📲 Adicionar à tela inicial
+                </button>
+
+                {!installPrompt && (
+                  <p className="mt-3 text-xs text-emerald-700">
+                    Se o botão de instalação não abrir automaticamente, use o menu do navegador e escolha "Adicionar à tela inicial".
                   </p>
-
-                  <p className="mt-1 text-sm text-emerald-700">
-                    Tenha o sistema na
-                    tela inicial do
-                    celular para acessar
-                    mais rapidamente.
-                  </p>
-
-                  <div className="mt-3 flex flex-col gap-2">
-                    <button
-                      type="button"
-                      onClick={
-                        onInstalar
-                      }
-                      className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white"
-                    >
-                      📲 Adicionar à
-                      tela inicial
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={
-                        onJaInstalado
-                      }
-                      className="rounded-xl border border-emerald-300 bg-white px-4 py-2 text-sm font-semibold text-emerald-700"
-                    >
-                      ✓ Já adicionei à
-                      tela inicial
-                    </button>
-                  </div>
-
-                  {!installPrompt && (
-                    <p className="mt-3 text-xs text-emerald-700">
-                      Se o botão de
-                      instalação não
-                      abrir
-                      automaticamente,
-                      use o menu do
-                      navegador e
-                      escolha
-                      "Adicionar à
-                      tela inicial".
-                    </p>
-                  )}
-                </div>
+                )}
               </div>
             </div>
-          ) : (
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-              <p className="font-semibold text-emerald-800">
-                ✓ Aplicativo
-                instalado
-              </p>
-
-              <p className="mt-1 text-sm text-emerald-700">
-                O sistema já está
-                marcado como
-                adicionado à tela
-                inicial.
-              </p>
-            </div>
-          )}
+          </div>
 
           {!notificacoesAtivas ? (
             <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
