@@ -651,6 +651,51 @@ function App() {
   }, [logado]);
 
   /* =========================================================
+     ATUALIZAÇÃO DA PWA / SERVICE WORKER
+  ========================================================= */
+
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+
+    let recarregar = true;
+
+    const atualizarAplicativo = async () => {
+      try {
+        const registro = await navigator.serviceWorker.getRegistration("/");
+
+        if (!registro) return;
+
+        // Força o navegador a verificar no servidor se o Service Worker
+        // publicado é mais novo, em vez de depender somente do cache local.
+        await registro.update();
+      } catch (erro) {
+        console.warn("Não foi possível verificar atualização da PWA:", erro);
+      }
+    };
+
+    const quandoTrocarController = () => {
+      // Evita recarregamentos repetidos na mesma abertura.
+      if (!recarregar) return;
+      recarregar = false;
+      window.location.reload();
+    };
+
+    navigator.serviceWorker.addEventListener(
+      "controllerchange",
+      quandoTrocarController
+    );
+
+    atualizarAplicativo();
+
+    return () => {
+      navigator.serviceWorker.removeEventListener(
+        "controllerchange",
+        quandoTrocarController
+      );
+    };
+  }, []);
+
+  /* =========================================================
      INSTALAÇÃO
   ========================================================= */
 
