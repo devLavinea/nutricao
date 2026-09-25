@@ -1617,11 +1617,11 @@ function Login({
 
                 <div className="flex-1">
                   <p className="font-bold text-emerald-800">
-                    📲 Instalar atalho
+                     Instalar atalho
                   </p>
 
                   <p className="mt-1 text-sm text-emerald-700">
-                    Acesso rápido ao sistema, ocupando menos espaço que uma foto no seu celular.
+                    Acesso rápido ao sistema, ocupando menos espaço que uma foto no seu celular!
                   </p>
 
                   <button
