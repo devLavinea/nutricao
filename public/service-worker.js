@@ -1,4 +1,4 @@
-const CACHE_NAME = "alimentacao-escolar-v2";
+const CACHE_NAME = "alimentacao-escolar-v3";
 
 const APP_SHELL = [
   "/",
@@ -7,13 +7,23 @@ const APP_SHELL = [
   "/icon-512.png",
   "/apple-touch-icon.png",
   "/favicon-32.png",
-  "/logo.png"
+  "/logo.png",
+  "/prefeitura.png",
 ];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(APP_SHELL);
+    caches.open(CACHE_NAME).then(async (cache) => {
+      // Um arquivo ausente não pode impedir a instalação do Service Worker.
+      await Promise.all(
+        APP_SHELL.map(async (asset) => {
+          try {
+            await cache.add(asset);
+          } catch (error) {
+            console.warn("[SW] Não foi possível armazenar:", asset, error);
+          }
+        })
+      );
     })
   );
 
@@ -22,60 +32,80 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => {
-      return Promise.all(
+    caches.keys().then((keys) =>
+      Promise.all(
         keys
           .filter((key) => key !== CACHE_NAME)
           .map((key) => caches.delete(key))
-      );
-    })
+      )
+    )
   );
 
   self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET") {
+  const request = event.request;
+
+  if (request.method !== "GET") {
+    return;
+  }
+
+  let url;
+
+  try {
+    url = new URL(request.url);
+  } catch {
+    return;
+  }
+
+  // O Cache API só aceita http/https. Isso também impede que
+  // requisições chrome-extension:// de chegarem ao cache.
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    return;
+  }
+
+  // Não intercepta Firebase, APIs ou outros recursos externos.
+  if (url.origin !== self.location.origin) {
     return;
   }
 
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
+    caches.match(request).then((cachedResponse) => {
       if (cachedResponse) {
         return cachedResponse;
       }
 
-      return fetch(event.request)
+      return fetch(request)
         .then((response) => {
-          if (
-            !response ||
-            response.status !== 200 ||
-            response.type !== "basic"
-          ) {
+          if (!response || response.status !== 200 || response.type !== "basic") {
             return response;
           }
 
           const responseClone = response.clone();
 
           caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseClone);
+            cache.put(request, responseClone).catch((error) => {
+              console.warn("[SW] Falha ao armazenar resposta:", error);
+            });
           });
 
           return response;
         })
         .catch(() => {
-          return caches.match("/");
+          // Só usa o shell offline para navegação de páginas.
+          if (request.mode === "navigate") {
+            return caches.match("/");
+          }
+
+          return new Response("", {
+            status: 503,
+            statusText: "Offline",
+          });
         });
     })
   );
 });
-
-/*
- * Recebe notificações enviadas pelo servidor futuramente.
- *
- * Para notificações reais mesmo com o aplicativo fechado,
- * será necessário integrar Web Push + backend.
- */
 
 self.addEventListener("push", (event) => {
   let data = {
@@ -83,14 +113,14 @@ self.addEventListener("push", (event) => {
     body: "Há uma nova tarefa no sistema.",
     icon: "/icon-192.png",
     badge: "/icon-192.png",
-    url: "/"
+    url: "/",
   };
 
   if (event.data) {
     try {
       data = {
         ...data,
-        ...event.data.json()
+        ...event.data.json(),
       };
     } catch {
       data.body = event.data.text();
@@ -102,9 +132,7 @@ self.addEventListener("push", (event) => {
       body: data.body,
       icon: data.icon,
       badge: data.badge,
-      data: {
-        url: data.url
-      }
+      data: { url: data.url },
     })
   );
 });
@@ -112,18 +140,19 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 
-  const url =
-    event.notification.data?.url || "/";
+  const url = event.notification.data?.url || "/";
 
   event.waitUntil(
     clients.matchAll({
       type: "window",
-      includeUncontrolled: true
+      includeUncontrolled: true,
     }).then((clientList) => {
       for (const client of clientList) {
         if ("focus" in client) {
           client.focus();
-          client.navigate(url);
+          if ("navigate" in client) {
+            client.navigate(url);
+          }
           return;
         }
       }
