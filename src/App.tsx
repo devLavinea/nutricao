@@ -19,6 +19,8 @@ import { firebaseDb } from "./lib/firebase";
 
 const imagemPlanilha = "/Imagem-planilha.png";
 const prefeituraLogo = "/prefeitura.png";
+// A identidade visual do aplicativo/PWA é a logo principal do sistema.
+const logoAplicativo = "/logo.png";
 
 type Perfil =
   | "secretaria"
@@ -635,19 +637,24 @@ function App() {
   ========================================================= */
 
   useEffect(() => {
-    function capturarInstalacao(
-      event: Event
-    ) {
+    function capturarInstalacao(event: Event) {
+      // Impede o navegador de mostrar o fluxo padrão antes
+      // que o usuário clique no nosso botão.
       event.preventDefault();
+      setInstallPrompt(event as BeforeInstallPromptEvent);
+    }
 
-      setInstallPrompt(
-        event as BeforeInstallPromptEvent
-      );
+    function marcarComoInstalado() {
+      setInstallPrompt(null);
     }
 
     window.addEventListener(
       "beforeinstallprompt",
       capturarInstalacao
+    );
+    window.addEventListener(
+      "appinstalled",
+      marcarComoInstalado
     );
 
     return () => {
@@ -655,28 +662,52 @@ function App() {
         "beforeinstallprompt",
         capturarInstalacao
       );
+      window.removeEventListener(
+        "appinstalled",
+        marcarComoInstalado
+      );
     };
   }, []);
 
   async function instalarAplicativo() {
-    if (!installPrompt) {
-      alert(
-        "Use o menu do navegador e escolha 'Adicionar à tela inicial'."
+    // Se o PWA já estiver aberto como aplicativo, não faz nada.
+    const modoStandalone =
+      window.matchMedia(
+        "(display-mode: standalone)"
+      ).matches ||
+      Boolean(
+        (window.navigator as Navigator & {
+          standalone?: boolean;
+        }).standalone
       );
-      return;
+
+    if (modoStandalone) return;
+
+    // Quando o navegador fornece beforeinstallprompt, abrimos
+    // a instalação diretamente pelo botão do aplicativo.
+    if (installPrompt) {
+      try {
+        await installPrompt.prompt();
+        const escolha = await installPrompt.userChoice;
+
+        if (escolha.outcome === "accepted") {
+          setInstallPrompt(null);
+        }
+
+        return;
+      } catch (erro) {
+        console.warn(
+          "A instalação direta não está disponível neste momento:",
+          erro
+        );
+      }
     }
 
-    try {
-      await installPrompt.prompt();
-
-      await installPrompt.userChoice;
-
-      setInstallPrompt(null);
-    } catch {
-      alert(
-        "Não foi possível abrir a instalação automaticamente. Use a opção 'Adicionar à tela inicial' do navegador."
-      );
-    }
+    // Se o navegador não fornecer a instalação direta, orientamos
+    // o usuário a usar o próprio menu do navegador.
+    alert(
+      'Para adicionar o aplicativo à tela inicial, abra o menu do navegador e escolha "Adicionar à tela inicial".'
+    );
   }
 
   /* =========================================================
@@ -1224,7 +1255,7 @@ function App() {
         <div className="flex items-center gap-3 p-6">
           <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-white">
             <img
-              src="/logo.png"
+              src={logoAplicativo}
               alt="Nossa Infância Maria Antonia"
               className="h-full w-full object-contain"
             />
@@ -1453,7 +1484,7 @@ function Login({
         <div className="mb-8 text-center">
           <div className="mx-auto flex h-20 w-20 items-center justify-center overflow-hidden rounded-3xl bg-white">
             <img
-              src="/logo.png"
+              src={logoAplicativo}
               alt="Nossa Infância Maria Antonia"
               className="h-full w-full object-contain"
             />
@@ -1570,14 +1601,15 @@ function Login({
                 <button
                   type="button"
                   onClick={onInstalar}
-                  className="mt-3 w-full rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white"
+                  className="mt-3 w-full rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700"
                 >
                   📲 Adicionar à tela inicial
                 </button>
 
                 {!installPrompt && (
-                  <p className="mt-3 text-xs text-emerald-700">
-                    Se o botão de instalação não abrir automaticamente, use o menu do navegador e escolha "Adicionar à tela inicial".
+                  <p className="mt-3 text-xs leading-5 text-emerald-700">
+                    Se a instalação não abrir automaticamente, abra o menu do navegador e escolha
+                    <strong> "Adicionar à tela inicial"</strong>.
                   </p>
                 )}
               </div>
