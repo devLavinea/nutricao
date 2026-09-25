@@ -650,21 +650,6 @@ function App() {
       capturarInstalacao
     );
 
-    function verificarInstalado() {
-      const standalone =
-        window.matchMedia(
-          "(display-mode: standalone)"
-        ).matches ||
-        (
-          window.navigator as Navigator & {
-            standalone?: boolean;
-          }
-        ).standalone === true;
-
-    }
-
-    verificarInstalado();
-
     return () => {
       window.removeEventListener(
         "beforeinstallprompt",
@@ -684,8 +669,7 @@ function App() {
     try {
       await installPrompt.prompt();
 
-      const resultado =
-        await installPrompt.userChoice;
+      await installPrompt.userChoice;
 
       setInstallPrompt(null);
     } catch {
