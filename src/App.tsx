@@ -374,6 +374,24 @@ function App() {
       null
     );
 
+  const [aplicativoInstalado, setAplicativoInstalado] =
+    useState(() => {
+      if (typeof window === "undefined") return false;
+
+      const modoStandalone =
+        window.matchMedia("(display-mode: standalone)").matches ||
+        Boolean(
+          (window.navigator as Navigator & {
+            standalone?: boolean;
+          }).standalone
+        );
+
+      return (
+        modoStandalone ||
+        localStorage.getItem("pwa_instalado") === "sim"
+      );
+    });
+
   const [notificacoesAtivas, setNotificacoesAtivas] = useState(() => {
     if (typeof window === "undefined" || !("Notification" in window)) {
       return false;
@@ -646,6 +664,8 @@ function App() {
 
     function marcarComoInstalado() {
       setInstallPrompt(null);
+      setAplicativoInstalado(true);
+      localStorage.setItem("pwa_instalado", "sim");
     }
 
     window.addEventListener(
@@ -692,6 +712,8 @@ function App() {
 
         if (escolha.outcome === "accepted") {
           setInstallPrompt(null);
+          setAplicativoInstalado(true);
+          localStorage.setItem("pwa_instalado", "sim");
         }
 
         return;
@@ -706,7 +728,7 @@ function App() {
     // Se o navegador não fornecer a instalação direta, orientamos
     // o usuário a usar o próprio menu do navegador.
     alert(
-      'Para adicionar o aplicativo à tela inicial, abra o menu do navegador e escolha "Adicionar à tela inicial".'
+      "A instalação automática não está disponível neste navegador. Use o menu do navegador para instalar o aplicativo."
     );
   }
 
@@ -1232,6 +1254,7 @@ function App() {
         installPrompt={
           installPrompt
         }
+        aplicativoInstalado={aplicativoInstalado}
         onInstalar={
           instalarAplicativo
         }
@@ -1455,6 +1478,7 @@ function Login({
   onSenhaChange,
   onSubmit,
   installPrompt,
+  aplicativoInstalado,
   onInstalar,
   notificacoesAtivas,
   onAtivarNotificacoes,
@@ -1474,6 +1498,7 @@ function Login({
   installPrompt:
     | BeforeInstallPromptEvent
     | null;
+  aplicativoInstalado: boolean;
   onInstalar: () => void;
   notificacoesAtivas: boolean;
   onAtivarNotificacoes: () => void;
@@ -1585,36 +1610,37 @@ function Login({
         </div>
 
         <div className="mt-5 space-y-3">
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-            <div className="flex gap-3">
-              <span className="text-2xl">📲</span>
+          {!aplicativoInstalado && (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+              <div className="flex gap-3">
+                <span className="text-2xl">📲</span>
 
-              <div className="flex-1">
-                <p className="font-bold text-emerald-800">
-                  Adicione o aplicativo
-                </p>
-
-                <p className="mt-1 text-sm text-emerald-700">
-                  Tenha o sistema na tela inicial do celular para acessar mais rapidamente.
-                </p>
-
-                <button
-                  type="button"
-                  onClick={onInstalar}
-                  className="mt-3 w-full rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700"
-                >
-                  📲 Adicionar à tela inicial
-                </button>
-
-                {!installPrompt && (
-                  <p className="mt-3 text-xs leading-5 text-emerald-700">
-                    Se a instalação não abrir automaticamente, abra o menu do navegador e escolha
-                    <strong> "Adicionar à tela inicial"</strong>.
+                <div className="flex-1">
+                  <p className="font-bold text-emerald-800">
+                    📲 Instalar atalho
                   </p>
-                )}
+
+                  <p className="mt-1 text-sm text-emerald-700">
+                    Acesso rápido ao sistema, ocupando menos espaço que uma foto no seu celular.
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={onInstalar}
+                    className="mt-3 w-full rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700"
+                  >
+                    📲 Instalar atalho
+                  </button>
+
+                  {!installPrompt && (
+                    <p className="mt-3 text-xs leading-5 text-emerald-700">
+                      Se a instalação automática não estiver disponível, use a opção de instalação do menu do navegador.
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {!notificacoesAtivas ? (
             <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
