@@ -52,7 +52,6 @@ type Cardapio = {
 
 type RegistroCozinha = {
   id: number;
-  _firestoreId?: string;
   data: string;
   grupo: Grupo;
   refeicao: Refeicao;
@@ -323,7 +322,7 @@ function App() {
       if (!logado) return;
       const { data, error } = await firebaseDb
         .from("registro_refeicoes")
-        .select("id, data, grupo, refeicao, servida, horario, registrado_por, _firestoreId")
+        .select("id, data, grupo, refeicao, servida, horario, registrado_por")
         .order("data", { ascending: false })
         .order("id", { ascending: false });
 
@@ -337,7 +336,6 @@ function App() {
       const registrosNormalizados: RegistroCozinha[] = (data ?? []).map(
         (item: any) => ({
           id: Number(item.id),
-          _firestoreId: String(item._firestoreId ?? "").trim() || undefined,
           data: normalizarData(item.data),
           grupo: String(item.grupo ?? "").trim(),
           refeicao: normalizarRefeicao(item.refeicao) || ("Almoço" as Refeicao),
@@ -417,11 +415,6 @@ function App() {
     cargo: string;
   } | null>(sessaoInicial?.funcionarioLogado ?? null);
 
-<<<<<<< HEAD
-  const ehLavineaSouza = perfil === "secretaria" && normalizarTexto(funcionarioLogado?.nome) === "lavinea souza santos";
-
-=======
->>>>>>> 7d3ab03 (voltando ao inical)
   /* =========================================================
      CARREGAR GRUPOS DO FIREBASE
   ========================================================= */
@@ -1940,67 +1933,6 @@ function Cozinha({
      PREPARAÇÕES DO CARDÁPIO PARA A REFEIÇÃO
   ========================================================= */
 
-<<<<<<< HEAD
-  const preparacoesDaRefeicao = useMemo(() => {
-    const mapa = new Map<string, Cardapio>();
-    const anoSelecionado = normalizarData(data).substring(0, 4);
-    const refeicaoNormalizada = normalizarTexto(refeicao);
-
-    // Uma preparação só fica indisponível quando o PAR
-    // (refeição + preparação) já foi registrado no ano da data selecionada.
-    // Ex.: Melancia picada no Lanche da manhã é diferente de
-    // Melancia picada no Lanche da tarde.
-    const paresJaRegistradosNoAno = new Set(
-      registros
-        .filter((registro) => {
-          const anoRegistro = normalizarData(registro.data).substring(0, 4);
-          return anoRegistro === anoSelecionado;
-        })
-        .map((registro) =>
-          `${normalizarTexto(registro.refeicao)}|${normalizarTexto(registro.servida)}`
-        )
-    );
-
-    for (const item of cardapio) {
-      if (normalizarTexto(item.refeicao) !== refeicaoNormalizada) {
-        continue;
-      }
-
-      const preparacao = String(item.preparacao ?? "").trim();
-      if (!preparacao) continue;
-
-      const chavePreparacao = normalizarTexto(preparacao);
-      const chavePar = `${refeicaoNormalizada}|${chavePreparacao}`;
-
-      // Se esta combinação refeição + preparação já foi servida
-      // neste ano, ela não pode ser selecionada novamente.
-      if (paresJaRegistradosNoAno.has(chavePar)) {
-        continue;
-      }
-
-      // Evita duplicar a mesma preparação dentro da mesma refeição
-      // caso ela apareça mais de uma vez no cardápio.
-      if (!mapa.has(chavePreparacao)) {
-        mapa.set(chavePreparacao, item);
-      }
-    }
-
-    return Array.from(mapa.values());
-  }, [cardapio, refeicao, registros, data]);
-
-  // Se uma preparação acabou de ser registrada ou o ano/refeição mudou,
-  // nunca mantenha no estado uma opção que deixou de estar disponível.
-  useEffect(() => {
-    if (
-      preparacaoSelecionada &&
-      !preparacoesDaRefeicao.some(
-        (item) => normalizarTexto(item.preparacao) === normalizarTexto(preparacaoSelecionada)
-      )
-    ) {
-      setPreparacaoSelecionada("");
-    }
-  }, [preparacoesDaRefeicao, preparacaoSelecionada]);
-=======
  const preparacoesDaRefeicao = useMemo(() => {
   const mapa = new Map<string, Cardapio>();
 
@@ -2016,7 +1948,6 @@ function Cozinha({
     }
 
     const preparacao = String(item.preparacao ?? "").trim();
->>>>>>> 7d3ab03 (voltando ao inical)
 
     if (!preparacao) continue;
 
@@ -2073,24 +2004,6 @@ function Cozinha({
       return;
     }
 
-    // Defesa adicional: mesmo que a interface tenha ficado aberta por muito
-    // tempo ou outro usuário tenha registrado a mesma refeição, não permita
-    // repetir o mesmo par (refeição + preparação) no mesmo ano.
-    const anoSelecionado = normalizarData(data).substring(0, 4);
-    const parJaRegistrado = registros.some((registro) =>
-      normalizarData(registro.data).substring(0, 4) === anoSelecionado &&
-      normalizarTexto(registro.refeicao) === normalizarTexto(refeicao) &&
-      normalizarTexto(registro.servida) === normalizarTexto(servida)
-    );
-
-    if (parJaRegistrado) {
-      alert(
-        `A preparação "${servida}" já foi registrada para a refeição "${refeicao}" no ano ${anoSelecionado}.`
-      );
-      setPreparacaoSelecionada("");
-      return;
-    }
-
     const gruposParaSalvar =
       normalizarTexto(grupo) === normalizarTexto("TODOS OS GRUPOS")
         ? grupos
@@ -2127,7 +2040,7 @@ function Cozinha({
     const { data: dadosSalvos, error } = await firebaseDb
       .from("registro_refeicoes")
       .insert(registrosParaBanco)
-      .select("id, data, grupo, refeicao, servida, horario, registrado_por, _firestoreId");
+      .select("id, data, grupo, refeicao, servida, horario, registrado_por");
 
     if (error) {
       console.error("ERRO AO SALVAR REGISTRO DE REFEIÇÃO:", error);
@@ -2140,7 +2053,6 @@ function Cozinha({
     const novosRegistros: RegistroCozinha[] = (dadosSalvos ?? []).map(
       (item: any) => ({
         id: Number(item.id),
-        _firestoreId: String(item._firestoreId ?? "").trim() || undefined,
         data: normalizarData(item.data),
         grupo: String(item.grupo ?? "").trim(),
         refeicao: normalizarRefeicao(item.refeicao) || refeicao,
@@ -2166,65 +2078,6 @@ function Cozinha({
 
     setPreparacaoSelecionada("");
     setFoto(null);
-  }
-
-  const ehSecretariaLavinea =
-    normalizarTexto(funcionarioLogado?.nome) === "lavinea souza santos";
-
-  function podeExcluirRegistro(registro: RegistroCozinha) {
-    if (ehSecretariaLavinea) return true;
-
-    return (
-      normalizarTexto(registro.registradoPor) ===
-      normalizarTexto(funcionarioLogado?.nome)
-    );
-  }
-
-  async function excluirRegistro(
-    registro: RegistroCozinha & { gruposExibidos?: string[]; firestoreIds?: string[] }
-  ) {
-    if (!podeExcluirRegistro(registro)) {
-      alert("Somente quem cadastrou este registro ou a secretária Lavinea Souza Santos pode excluí-lo.");
-      return;
-    }
-
-    if (!window.confirm(`Excluir o registro \"${registro.servida}\" de ${formatarDataBR(registro.data)}?`)) {
-      return;
-    }
-
-    const ids = Array.from(
-      new Set(
-        [
-          ...(registro.firestoreIds ?? []),
-          ...(registro._firestoreId ? [registro._firestoreId] : []),
-        ]
-          .filter(Boolean)
-          .map(String)
-      )
-    );
-
-    if (ids.length === 0) {
-      alert("Não foi possível identificar o registro no Firestore.");
-      return;
-    }
-
-    for (const firestoreId of ids) {
-      const resultado = await firebaseDb
-        .from("registro_refeicoes")
-        .delete(firestoreId);
-
-      if (resultado.error) {
-        console.error("ERRO AO EXCLUIR REGISTRO:", resultado.error);
-        alert(`Não foi possível excluir o registro.\n\n${resultado.error.message}`);
-        return;
-      }
-    }
-
-    setRegistros((anterior) =>
-      anterior.filter((item) => !ids.includes(String(item._firestoreId ?? "")))
-    );
-
-    alert("Registro excluído com sucesso.");
   }
 
   function handleFoto(
@@ -2268,7 +2121,7 @@ function Cozinha({
   };
 
   const registrosExibicao = useMemo(() => {
-    const mapa = new Map<string, RegistroCozinha & { gruposExibidos: string[]; firestoreIds: string[] }>();
+    const mapa = new Map<string, RegistroCozinha & { gruposExibidos: string[] }>();
 
     for (const registro of registros.filter((item) => normalizarData(item.data).substring(0, 7) === mesVisualizacao)) {
       const chave = [
@@ -2289,7 +2142,6 @@ function Cozinha({
         mapa.set(chave, {
           ...registro,
           gruposExibidos: [registro.grupo],
-          firestoreIds: registro._firestoreId ? [registro._firestoreId] : [],
         });
       }
     }
@@ -2504,10 +2356,6 @@ function Cozinha({
                 <th className="p-3">
                   Foto
                 </th>
-
-                <th className="p-3">
-                  Ações
-                </th>
               </tr>
             </thead>
 
@@ -2516,7 +2364,7 @@ function Cozinha({
                 0 && (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={6}
                     className="p-8 text-center text-slate-500"
                   >
                     Nenhuma refeição
@@ -2572,20 +2420,6 @@ function Cozinha({
                         />
                       ) : (
                         <span className="text-xs text-slate-400">Sem foto</span>
-                      )}
-                    </td>
-
-                    <td className="p-3">
-                      {podeExcluirRegistro(registro) ? (
-                        <button
-                          type="button"
-                          onClick={() => excluirRegistro(registro)}
-                          className="rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50"
-                        >
-                          🗑️ Excluir
-                        </button>
-                      ) : (
-                        <span className="text-xs text-slate-400">Sem permissão</span>
                       )}
                     </td>
                   </tr>
@@ -3473,197 +3307,6 @@ function ProfessorAssistente({
   );
 }
 
-<<<<<<< HEAD
-
-/* =========================================================
-   CONFIGURAÇÕES — RESTRITA À SECRETARIA LAVÍNEA SOUZA
-========================================================= */
-
-type RegistroConfiguracao = Record<string, any> & { _firestoreId?: string };
-
-function Configuracoes() {
-  const [aba, setAba] = useState<"cardapio" | "funcionarios" | "grupos">("cardapio");
-  const [cardapio, setCardapio] = useState<RegistroConfiguracao[]>([]);
-  const [funcionarios, setFuncionarios] = useState<RegistroConfiguracao[]>([]);
-  const [grupos, setGrupos] = useState<RegistroConfiguracao[]>([]);
-  const [carregando, setCarregando] = useState(false);
-  const [mensagem, setMensagem] = useState("");
-  const [erro, setErro] = useState("");
-
-  const [refeicao, setRefeicao] = useState<Refeicao>("Desjejum");
-  const [preparacao, setPreparacao] = useState("");
-  const [nomeFuncionario, setNomeFuncionario] = useState("");
-  const [loginFuncionario, setLoginFuncionario] = useState("");
-  const [senhaFuncionario, setSenhaFuncionario] = useState("");
-  const [grupoFuncionario, setGrupoFuncionario] = useState("");
-  const [cargoFuncionario, setCargoFuncionario] = useState("");
-  const [nomeGrupo, setNomeGrupo] = useState("");
-
-  const limparMensagens = () => { setMensagem(""); setErro(""); };
-
-  const carregarTudo = useCallback(async () => {
-    setCarregando(true);
-    try {
-      const [c, f, g] = await Promise.all([
-        firebaseDb.from("cardapio").select("*").order("id", { ascending: true }),
-        firebaseDb.from("funcionarios").select("*").order("id", { ascending: true }),
-        firebaseDb.from("grupos").select("*").order("id", { ascending: true }),
-      ]);
-      if (c.error) throw new Error(`Cardápio: ${c.error.message}`);
-      if (f.error) throw new Error(`Funcionários: ${f.error.message}`);
-      if (g.error) throw new Error(`Grupos: ${g.error.message}`);
-      setCardapio(c.data ?? []); setFuncionarios(f.data ?? []); setGrupos(g.data ?? []);
-      setErro("");
-    } catch (e) {
-      setErro(e instanceof Error ? e.message : "Não foi possível carregar os cadastros.");
-    } finally { setCarregando(false); }
-  }, []);
-
-  useEffect(() => { carregarTudo(); }, [carregarTudo]);
-
-  async function adicionarCardapio(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); limparMensagens();
-    const texto = preparacao.trim();
-    if (!texto) { setErro("Informe a preparação."); return; }
-    if (cardapio.some(i => normalizarTexto(i.refeicao) === normalizarTexto(refeicao) && normalizarTexto(i.preparacao) === normalizarTexto(texto))) {
-      setErro("Essa preparação já está cadastrada nessa refeição."); return;
-    }
-    const r = await firebaseDb.from("cardapio").insert({ id: Date.now(), refeicao, preparacao: texto }).select("*");
-    if (r.error) { setErro(`Não foi possível adicionar ao cardápio: ${r.error.message}`); return; }
-    setPreparacao(""); setMensagem("Item adicionado ao cardápio."); await carregarTudo();
-  }
-
-  async function adicionarFuncionario(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); limparMensagens();
-    if (!nomeFuncionario.trim() || !loginFuncionario.trim() || !senhaFuncionario.trim()) {
-      setErro("Nome, login e senha são obrigatórios."); return;
-    }
-    if (funcionarios.some(i => normalizarTexto(i.login) === normalizarTexto(loginFuncionario))) {
-      setErro("Esse login já está cadastrado."); return;
-    }
-    const r = await firebaseDb.from("funcionarios").insert({
-      id: Date.now(), nome: nomeFuncionario.trim(), login: loginFuncionario.trim(),
-      senha: senhaFuncionario.trim(), grupo: grupoFuncionario.trim(), cargo: cargoFuncionario.trim(),
-    }).select("*");
-    if (r.error) { setErro(`Não foi possível adicionar o funcionário: ${r.error.message}`); return; }
-    setNomeFuncionario(""); setLoginFuncionario(""); setSenhaFuncionario(""); setGrupoFuncionario(""); setCargoFuncionario("");
-    setMensagem("Funcionário adicionado com sucesso."); await carregarTudo();
-  }
-
-  async function adicionarGrupo(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); limparMensagens();
-    const nome = nomeGrupo.trim();
-    if (!nome) { setErro("Informe o nome do grupo."); return; }
-    if (grupos.some(i => normalizarTexto(i.nome ?? i.grupo ?? i.name) === normalizarTexto(nome))) {
-      setErro("Esse grupo já está cadastrado."); return;
-    }
-    const r = await firebaseDb.from("grupos").insert({ id: Date.now(), nome }).select("*");
-    if (r.error) { setErro(`Não foi possível adicionar o grupo: ${r.error.message}`); return; }
-    setNomeGrupo(""); setMensagem("Grupo adicionado com sucesso."); await carregarTudo();
-  }
-
-  async function remover(collection: string, item: RegistroConfiguracao, descricao: string) {
-    limparMensagens();
-    const firestoreId = String(item._firestoreId ?? "");
-    if (!firestoreId) { setErro("Não foi possível identificar o documento no Firestore."); return; }
-    if (!window.confirm(`Tem certeza que deseja remover "${descricao}"?`)) return;
-    const r = await firebaseDb.from(collection).delete(firestoreId);
-    if (r.error) { setErro(`Não foi possível remover: ${r.error.message}`); return; }
-    setMensagem("Registro removido com sucesso."); await carregarTudo();
-  }
-
-  const obterNomeGrupo = (i: RegistroConfiguracao) => String(i.nome ?? i.grupo ?? i.name ?? "").trim();
-
-  const cards = [
-    { chave: "cardapio" as const, titulo: "Cardápio", total: cardapio.length, icone: "🍽️" },
-    { chave: "funcionarios" as const, titulo: "Funcionários", total: funcionarios.length, icone: "👥" },
-    { chave: "grupos" as const, titulo: "Grupos", total: grupos.length, icone: "🏫" },
-  ];
-
-  return (
-    <section className="space-y-6">
-      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div><p className="text-xs font-bold uppercase tracking-wide text-emerald-700">Área administrativa</p>
-            <h2 className="text-2xl font-bold text-slate-800">Configurações</h2>
-            <p className="mt-1 text-sm text-slate-600">Os cadastros são carregados diretamente do banco de dados.</p>
-          </div>
-          <button type="button" onClick={carregarTudo} disabled={carregando} className="rounded-xl border border-emerald-600 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 disabled:opacity-50">
-            {carregando ? "Atualizando..." : "↻ Atualizar dados"}
-          </button>
-        </div>
-      </div>
-
-      {mensagem && <div className="rounded-xl bg-emerald-50 p-4 text-sm font-semibold text-emerald-700">{mensagem}</div>}
-      {erro && <div className="rounded-xl bg-red-50 p-4 text-sm font-semibold text-red-700">{erro}</div>}
-
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        {cards.map(c => <button key={c.chave} type="button" onClick={() => { setAba(c.chave); limparMensagens(); }}
-          className={`rounded-2xl border p-5 text-left shadow-sm ${aba === c.chave ? "border-emerald-500 bg-emerald-50" : "border-slate-200 bg-white"}`}>
-          <div className="text-2xl">{c.icone}</div><p className="mt-2 font-bold text-slate-800">{c.titulo}</p>
-          <p className="text-sm text-slate-500">{c.total} cadastrado(s) no banco</p>
-        </button>)}
-      </div>
-
-      {aba === "cardapio" && <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
-        <form onSubmit={adicionarCardapio} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 className="text-lg font-bold text-slate-800">Adicionar item ao cardápio</h3>
-          <div className="mt-4 space-y-3">
-            <select value={refeicao} onChange={e => setRefeicao(e.target.value as Refeicao)} className="w-full rounded-xl border border-slate-300 px-3 py-3">
-              {REFEICOES.map(r => <option key={r}>{r}</option>)}
-            </select>
-            <input value={preparacao} onChange={e => setPreparacao(e.target.value)} placeholder="Ex.: Melancia picada" className="w-full rounded-xl border border-slate-300 px-3 py-3" />
-            <button type="submit" className="w-full rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white">+ Adicionar ao cardápio</button>
-          </div>
-        </form>
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="text-lg font-bold text-slate-800">Itens cadastrados</h3>
-          <div className="mt-4 space-y-2">{cardapio.length === 0 ? <p className="text-sm text-slate-500">Nenhum item cadastrado.</p> :
-            cardapio.map(i => <div key={String(i._firestoreId ?? i.id)} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-3">
-              <div><p className="font-semibold text-slate-800">{i.preparacao}</p><p className="text-xs text-slate-500">{i.refeicao}</p></div>
-              <button type="button" onClick={() => remover("cardapio", i, `${i.preparacao} — ${i.refeicao}`)} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600">Remover</button>
-            </div>)}</div>
-        </div>
-      </div>}
-
-      {aba === "funcionarios" && <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
-        <form onSubmit={adicionarFuncionario} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="text-lg font-bold text-slate-800">Adicionar funcionário</h3>
-          <div className="mt-4 space-y-3">
-            <input value={nomeFuncionario} onChange={e => setNomeFuncionario(e.target.value)} placeholder="Nome completo" className="w-full rounded-xl border border-slate-300 px-3 py-3" />
-            <input value={loginFuncionario} onChange={e => setLoginFuncionario(e.target.value)} placeholder="Login" className="w-full rounded-xl border border-slate-300 px-3 py-3" />
-            <input value={senhaFuncionario} onChange={e => setSenhaFuncionario(e.target.value)} placeholder="Senha" type="password" className="w-full rounded-xl border border-slate-300 px-3 py-3" />
-            <input value={cargoFuncionario} onChange={e => setCargoFuncionario(e.target.value)} placeholder="Cargo" className="w-full rounded-xl border border-slate-300 px-3 py-3" />
-            <input value={grupoFuncionario} onChange={e => setGrupoFuncionario(e.target.value)} placeholder="Grupo" className="w-full rounded-xl border border-slate-300 px-3 py-3" />
-            <button type="submit" className="w-full rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white">+ Adicionar funcionário</button>
-          </div>
-        </form>
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="text-lg font-bold text-slate-800">Funcionários cadastrados</h3>
-          <div className="mt-4 space-y-2">{funcionarios.length === 0 ? <p className="text-sm text-slate-500">Nenhum funcionário cadastrado.</p> :
-            funcionarios.map(i => <div key={String(i._firestoreId ?? i.id)} className="flex flex-col gap-3 rounded-xl bg-slate-50 p-3 sm:flex-row sm:items-center sm:justify-between">
-              <div><p className="font-semibold text-slate-800">{i.nome || "Sem nome"}</p><p className="text-xs text-slate-500">Login: {i.login || "—"} · Cargo: {i.cargo || "—"} · Grupo: {i.grupo || "—"}</p></div>
-              <button type="button" onClick={() => remover("funcionarios", i, String(i.nome || "funcionário"))} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600">Remover</button>
-            </div>)}</div>
-        </div>
-      </div>}
-
-      {aba === "grupos" && <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
-        <form onSubmit={adicionarGrupo} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="text-lg font-bold text-slate-800">Adicionar grupo</h3>
-          <div className="mt-4 space-y-3"><input value={nomeGrupo} onChange={e => setNomeGrupo(e.target.value)} placeholder="Ex.: Maternal II" className="w-full rounded-xl border border-slate-300 px-3 py-3" />
-            <button type="submit" className="w-full rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white">+ Adicionar grupo</button></div>
-        </form>
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="text-lg font-bold text-slate-800">Grupos cadastrados</h3>
-          <div className="mt-4 grid gap-2 sm:grid-cols-2">{grupos.length === 0 ? <p className="text-sm text-slate-500">Nenhum grupo cadastrado.</p> :
-            grupos.map(i => <div key={String(i._firestoreId ?? i.id)} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-3">
-              <span className="font-semibold text-slate-800">{obterNomeGrupo(i)}</span>
-              <button type="button" onClick={() => remover("grupos", i, obterNomeGrupo(i))} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600">Remover</button>
-            </div>)}</div>
-        </div>
-      </div>}
-    </section>
-  );
-}
-
-=======
->>>>>>> 7d3ab03 (voltando ao inical)
 function DashboardResultados({
   avaliacoes,
   registros,

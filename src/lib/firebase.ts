@@ -2,10 +2,10 @@ import { initializeApp } from "firebase/app";
 import {
   addDoc,
   collection,
-  deleteDoc,
-  doc,
   getDocs,
   getFirestore,
+  orderBy,
+  query,
 } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -38,17 +38,11 @@ type QueryState = {
 };
 
 function pickFields(data: Record<string, any>, fields?: string[]) {
-  if (!fields || fields.length === 0 || fields.includes("*")) return data;
-
+  if (!fields || fields.length === 0) return data;
   const result: Record<string, any> = {};
   for (const field of fields) {
     if (field in data) result[field] = data[field];
   }
-
-  // Metadados internos gerados pelo adaptador precisam continuar disponíveis
-  // mesmo quando o chamador seleciona apenas os campos do documento.
-  if (data._firestoreId) result._firestoreId = data._firestoreId;
-
   return result;
 }
 
@@ -71,32 +65,33 @@ function formatFirebaseError(error: any) {
 }
 
 async function executeSelect(state: QueryState) {
-  // Lê a coleção inteira diretamente do Firestore.
-  // A ordenação é feita no navegador para não depender de índices
-  // nem de todos os documentos possuírem o campo usado no orderBy.
   const ref = collection(db, state.collectionName);
-  const snapshot = await getDocs(ref);
+  const firestoreQuery =
+    state.orders.length === 1
+      ? query(
+          ref,
+          orderBy(
+            state.orders[0].field,
+            state.orders[0].ascending ? "asc" : "desc"
+          )
+        )
+      : ref;
+
+  const snapshot = await getDocs(firestoreQuery);
 
   let rows: Record<string, any>[] = snapshot.docs.map((item) => {
     const data = item.data();
-
-    return {
-      ...data,
-      id: data.id ?? item.id,
-      _firestoreId: item.id,
-    };
+    return { id: data.id ?? item.id, ...data };
   });
 
-  if (state.orders.length > 0) {
+  if (state.orders.length > 1) {
     rows.sort((a, b) => {
       for (const order of state.orders) {
         const comparison = compareValues(a[order.field], b[order.field]);
-
         if (comparison !== 0) {
           return order.ascending ? comparison : -comparison;
         }
       }
-
       return 0;
     });
   }
@@ -115,10 +110,7 @@ class SelectBuilder {
     this.state = {
       collectionName,
       selectedFields: fields
-        ? fields
-            .split(",")
-            .map((field) => field.trim())
-            .filter(Boolean)
+        ? fields.split(",").map((field) => field.trim()).filter(Boolean)
         : undefined,
       orders: [],
     };
@@ -138,14 +130,8 @@ class SelectBuilder {
   }
 
   then<TResult1 = { data: any[] | null; error: any }, TResult2 = never>(
-    onfulfilled?:
-      | ((
-          value: { data: any[] | null; error: any }
-        ) => TResult1 | PromiseLike<TResult1>)
-      | null,
-    onrejected?:
-      | ((reason: any) => TResult2 | PromiseLike<TResult2>)
-      | null
+    onfulfilled?: ((value: { data: any[] | null; error: any }) => TResult1 | PromiseLike<TResult1>) | null,
+    onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null
   ): Promise<TResult1 | TResult2> {
     return executeSelect(this.state)
       .then((data) => ({ data, error: null }))
@@ -155,16 +141,16 @@ class SelectBuilder {
 }
 
 class InsertBuilder {
-  private readonly collectionName: string;
-  private readonly payload: Record<string, any> | Record<string, any>[];
+private readonly collectionName: string;
+private readonly payload: Record<string, any> | Record<string, any>[];
 
-  constructor(
-    collectionName: string,
-    payload: Record<string, any> | Record<string, any>[]
-  ) {
-    this.collectionName = collectionName;
-    this.payload = payload;
-  }
+constructor(
+  collectionName: string,
+  payload: Record<string, any> | Record<string, any>[]
+) {
+  this.collectionName = collectionName;
+  this.payload = payload;
+}
 
   async select(_fields?: string) {
     try {
@@ -191,37 +177,12 @@ class InsertBuilder {
   }
 }
 
-class DeleteBuilder {
-  private readonly collectionName: string;
-  private readonly firestoreId: string;
-  constructor(collectionName: string, firestoreId: string) {
-    this.collectionName = collectionName;
-    this.firestoreId = firestoreId;
-  }
-  async execute() {
-    try {
-      await deleteDoc(doc(db, this.collectionName, this.firestoreId));
-      return { data: true, error: null };
-    } catch (error) {
-      return { data: null, error: formatFirebaseError(error) };
-    }
-  }
-  then<TResult1 = { data: boolean | null; error: any }, TResult2 = never>(
-    onfulfilled?: ((value: { data: boolean | null; error: any }) => TResult1 | PromiseLike<TResult1>) | null,
-    onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null
-  ): Promise<TResult1 | TResult2> {
-    return this.execute().then(onfulfilled as any, onrejected as any);
-  }
-}
-
 class FirebaseDatabaseAdapter {
   from(collectionName: string) {
     return {
       select: (fields?: string) => new SelectBuilder(collectionName, fields),
       insert: (payload: Record<string, any> | Record<string, any>[]) =>
         new InsertBuilder(collectionName, payload),
-      delete: (firestoreId: string) =>
-        new DeleteBuilder(collectionName, firestoreId),
     };
   }
 }
