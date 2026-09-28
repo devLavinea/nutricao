@@ -1898,29 +1898,63 @@ function Cozinha({
 
   const preparacoesDaRefeicao = useMemo(() => {
     const mapa = new Map<string, Cardapio>();
+    const anoSelecionado = normalizarData(data).substring(0, 4);
+    const refeicaoNormalizada = normalizarTexto(refeicao);
+
+    // Uma preparação só fica indisponível quando o PAR
+    // (refeição + preparação) já foi registrado no ano da data selecionada.
+    // Ex.: Melancia picada no Lanche da manhã é diferente de
+    // Melancia picada no Lanche da tarde.
+    const paresJaRegistradosNoAno = new Set(
+      registros
+        .filter((registro) => {
+          const anoRegistro = normalizarData(registro.data).substring(0, 4);
+          return anoRegistro === anoSelecionado;
+        })
+        .map((registro) =>
+          `${normalizarTexto(registro.refeicao)}|${normalizarTexto(registro.servida)}`
+        )
+    );
 
     for (const item of cardapio) {
-      if (
-        normalizarTexto(item.refeicao) !==
-        normalizarTexto(refeicao)
-      ) {
+      if (normalizarTexto(item.refeicao) !== refeicaoNormalizada) {
         continue;
       }
 
       const preparacao = String(item.preparacao ?? "").trim();
       if (!preparacao) continue;
 
-      const chave = normalizarTexto(preparacao);
+      const chavePreparacao = normalizarTexto(preparacao);
+      const chavePar = `${refeicaoNormalizada}|${chavePreparacao}`;
 
-      // O cardápio é a fonte da lista.
-      // Uma preparação já servida não é removida daqui.
-      if (!mapa.has(chave)) {
-        mapa.set(chave, item);
+      // Se esta combinação refeição + preparação já foi servida
+      // neste ano, ela não pode ser selecionada novamente.
+      if (paresJaRegistradosNoAno.has(chavePar)) {
+        continue;
+      }
+
+      // Evita duplicar a mesma preparação dentro da mesma refeição
+      // caso ela apareça mais de uma vez no cardápio.
+      if (!mapa.has(chavePreparacao)) {
+        mapa.set(chavePreparacao, item);
       }
     }
 
     return Array.from(mapa.values());
-  }, [cardapio, refeicao]);
+  }, [cardapio, refeicao, registros, data]);
+
+  // Se uma preparação acabou de ser registrada ou o ano/refeição mudou,
+  // nunca mantenha no estado uma opção que deixou de estar disponível.
+  useEffect(() => {
+    if (
+      preparacaoSelecionada &&
+      !preparacoesDaRefeicao.some(
+        (item) => normalizarTexto(item.preparacao) === normalizarTexto(preparacaoSelecionada)
+      )
+    ) {
+      setPreparacaoSelecionada("");
+    }
+  }, [preparacoesDaRefeicao, preparacaoSelecionada]);
 
   // Ao abrir/montar a tela Cozinha, busca novamente o cardápio no banco.
   useEffect(() => {
@@ -1953,6 +1987,24 @@ function Cozinha({
 
     if (!servida.trim()) {
       alert("Selecione a preparação que foi servida.");
+      return;
+    }
+
+    // Defesa adicional: mesmo que a interface tenha ficado aberta por muito
+    // tempo ou outro usuário tenha registrado a mesma refeição, não permita
+    // repetir o mesmo par (refeição + preparação) no mesmo ano.
+    const anoSelecionado = normalizarData(data).substring(0, 4);
+    const parJaRegistrado = registros.some((registro) =>
+      normalizarData(registro.data).substring(0, 4) === anoSelecionado &&
+      normalizarTexto(registro.refeicao) === normalizarTexto(refeicao) &&
+      normalizarTexto(registro.servida) === normalizarTexto(servida)
+    );
+
+    if (parJaRegistrado) {
+      alert(
+        `A preparação "${servida}" já foi registrada para a refeição "${refeicao}" no ano ${anoSelecionado}.`
+      );
+      setPreparacaoSelecionada("");
       return;
     }
 
