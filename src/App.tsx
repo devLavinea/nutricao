@@ -1933,47 +1933,53 @@ function Cozinha({
      PREPARAÇÕES DO CARDÁPIO PARA A REFEIÇÃO
   ========================================================= */
 
- const preparacoesDaRefeicao = useMemo(() => {
-  const mapa = new Map<string, Cardapio>();
+  const preparacoesDaRefeicao = useMemo(() => {
+    const mapa = new Map<string, Cardapio>();
+    const refeicaoSelecionada = normalizarRefeicao(refeicao);
+    const anoSelecionado = normalizarData(data).substring(0, 4);
 
-  // Ano selecionado no campo de data
-  const anoAtual = normalizarData(data).substring(0, 4);
+    for (const item of cardapio) {
+      // O cardápio é filtrado pela REFEIÇÃO + PREPARAÇÃO.
+      // Assim, "MELANCIA PICADA" pode existir no Lanche da manhã
+      // e também no Lanche da tarde sem uma refeição bloquear a outra.
+      const refeicaoDoCardapio = normalizarRefeicao(item.refeicao);
+      const preparacao = String(item.preparacao ?? "").trim();
 
-  for (const item of cardapio) {
-    if (
-      normalizarTexto(item.refeicao) !==
-      normalizarTexto(refeicao)
-    ) {
-      continue;
+      if (!refeicaoDoCardapio || !preparacao) continue;
+      if (refeicaoDoCardapio !== refeicaoSelecionada) continue;
+
+      const chavePreparacao = normalizarTexto(preparacao);
+      const chaveCardapio = `${normalizarTexto(refeicaoDoCardapio)}|${chavePreparacao}`;
+
+      // Uma preparação só fica indisponível se a MESMA combinação
+      // refeição + preparação já tiver sido registrada no mesmo ano.
+      const jaRealizadaNoAno = registros.some((registro) => {
+        const dataRegistro = normalizarData(registro.data);
+        const refeicaoDoRegistro = normalizarRefeicao(registro.refeicao);
+        const preparacaoDoRegistro = normalizarTexto(registro.servida);
+
+        return (
+          dataRegistro.substring(0, 4) === anoSelecionado &&
+          refeicaoDoRegistro === refeicaoSelecionada &&
+          preparacaoDoRegistro === chavePreparacao
+        );
+      });
+
+      if (jaRealizadaNoAno) continue;
+
+      if (!mapa.has(chaveCardapio)) {
+        mapa.set(chaveCardapio, {
+          ...item,
+          refeicao: refeicaoDoCardapio,
+          preparacao,
+        });
+      }
     }
 
-    const preparacao = String(item.preparacao ?? "").trim();
-
-    if (!preparacao) continue;
-
-    const chave = normalizarTexto(preparacao);
-
-    // Verifica se a preparação já foi registrada
-    // em qualquer mês do mesmo ano
-    const jaRealizadaNoAno = registros.some((registro) => {
-      const dataRegistro = normalizarData(registro.data);
-
-      return (
-        dataRegistro.substring(0, 4) === anoAtual &&
-        normalizarTexto(registro.servida) === chave
-      );
-    });
-
-    // Se já foi registrada no ano, não aparece
-    if (jaRealizadaNoAno) continue;
-
-    if (!mapa.has(chave)) {
-      mapa.set(chave, item);
-    }
-  }
-
-  return Array.from(mapa.values());
-}, [cardapio, refeicao, registros, data]);
+    return Array.from(mapa.values()).sort((a, b) =>
+      a.preparacao.localeCompare(b.preparacao, "pt-BR")
+    );
+  }, [cardapio, refeicao, registros, data]);
 
   const servida = preparacaoSelecionada;
 
@@ -2070,11 +2076,7 @@ function Cozinha({
       ...anterior,
     ]);
 
-    alert(
-      gruposValidos.length > 1
-        ? `Refeição registrada com sucesso para ${gruposValidos.length} grupos.`
-        : "Refeição registrada com sucesso!"
-    );
+    alert("Refeição cadastrada com sucesso!");
 
     setPreparacaoSelecionada("");
     setFoto(null);
@@ -2301,7 +2303,7 @@ function Cozinha({
 
             {preparacoesDaRefeicao.length === 0 && (
               <p className="mt-2 text-sm text-amber-600">
-                Nenhuma preparação cadastrada para esta refeição no cardápio.
+                Todas as preparações previstas para esta refeição já foram realizadas.
               </p>
             )}
 
@@ -2575,20 +2577,7 @@ function ProfessorAssistente({
       .reverse();
   }, [registros]);
 
-  useEffect(() => {
-    const atualizarMes = () =>
-      setMesVisualizacaoProfessor(
-        obterDataHoje().substring(0, 7)
-      );
-
-    const timer = window.setInterval(
-      atualizarMes,
-      60000
-    );
-
-    return () =>
-      window.clearInterval(timer);
-  }, []);
+ 
 
   const formatarMesAnoProfessor = (
     mes: string
