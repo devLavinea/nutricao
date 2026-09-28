@@ -1933,13 +1933,18 @@ function Cozinha({
      PREPARAÇÕES DO CARDÁPIO PARA A REFEIÇÃO
   ========================================================= */
 
- const preparacoesDaRefeicao = useMemo(() => {
+/* =========================================================
+   PREPARAÇÕES DO CARDÁPIO PARA A REFEIÇÃO
+========================================================= */
+
+const preparacoesDaRefeicao = useMemo(() => {
   const mapa = new Map<string, Cardapio>();
 
   // Ano selecionado no campo de data
   const anoAtual = normalizarData(data).substring(0, 4);
 
   for (const item of cardapio) {
+    // Mostra somente as preparações da refeição selecionada
     if (
       normalizarTexto(item.refeicao) !==
       normalizarTexto(refeicao)
@@ -1947,33 +1952,60 @@ function Cozinha({
       continue;
     }
 
-    const preparacao = String(item.preparacao ?? "").trim();
+    const preparacao = String(
+      item.preparacao ?? ""
+    ).trim();
 
     if (!preparacao) continue;
 
+    // Normaliza o nome da preparação para comparação
     const chave = normalizarTexto(preparacao);
 
-    // Verifica se a preparação já foi registrada
-    // em qualquer mês do mesmo ano
+    /*
+      Verifica se a preparação já foi registrada no ano,
+      MAS somente dentro da MESMA REFEIÇÃO.
+
+      Exemplo:
+      Lanche da manhã + Melancia picada
+      NÃO bloqueia:
+      Lanche da tarde + Melancia picada
+    */
     const jaRealizadaNoAno = registros.some((registro) => {
       const dataRegistro = normalizarData(registro.data);
 
       return (
         dataRegistro.substring(0, 4) === anoAtual &&
+        normalizarTexto(registro.refeicao) ===
+          normalizarTexto(refeicao) &&
         normalizarTexto(registro.servida) === chave
       );
     });
 
-    // Se já foi registrada no ano, não aparece
-    if (jaRealizadaNoAno) continue;
+    // Se já foi registrada no ano para ESTA refeição,
+    // não aparece novamente nesta lista.
+    if (jaRealizadaNoAno) {
+      continue;
+    }
 
+    /*
+      Evita duplicações dentro da mesma refeição.
+
+      Como já filtramos pela refeição acima, uma preparação
+      com o mesmo nome em outra refeição continua podendo
+      aparecer normalmente.
+    */
     if (!mapa.has(chave)) {
       mapa.set(chave, item);
     }
   }
 
   return Array.from(mapa.values());
-}, [cardapio, refeicao, registros, data]);
+}, [
+  cardapio,
+  refeicao,
+  registros,
+  data,
+]);
 
   const servida = preparacaoSelecionada;
 
