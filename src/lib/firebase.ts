@@ -44,6 +44,11 @@ function pickFields(data: Record<string, any>, fields?: string[]) {
   for (const field of fields) {
     if (field in data) result[field] = data[field];
   }
+
+  // Metadados internos gerados pelo adaptador precisam continuar disponíveis
+  // mesmo quando o chamador seleciona apenas os campos do documento.
+  if (data._firestoreId) result._firestoreId = data._firestoreId;
+
   return result;
 }
 

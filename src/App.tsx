@@ -54,6 +54,7 @@ type Cardapio = {
 
 type RegistroCozinha = {
   id: number;
+  _firestoreId?: string;
   data: string;
   grupo: Grupo;
   refeicao: Refeicao;
@@ -324,7 +325,7 @@ function App() {
       if (!logado) return;
       const { data, error } = await firebaseDb
         .from("registro_refeicoes")
-        .select("id, data, grupo, refeicao, servida, horario, registrado_por")
+        .select("id, data, grupo, refeicao, servida, horario, registrado_por, _firestoreId")
         .order("data", { ascending: false })
         .order("id", { ascending: false });
 
@@ -338,6 +339,7 @@ function App() {
       const registrosNormalizados: RegistroCozinha[] = (data ?? []).map(
         (item: any) => ({
           id: Number(item.id),
+          _firestoreId: String(item._firestoreId ?? "").trim() || undefined,
           data: normalizarData(item.data),
           grupo: String(item.grupo ?? "").trim(),
           refeicao: normalizarRefeicao(item.refeicao) || ("Almoço" as Refeicao),
@@ -417,7 +419,7 @@ function App() {
     cargo: string;
   } | null>(sessaoInicial?.funcionarioLogado ?? null);
 
-  const ehLavineaSouza = perfil === "secretaria" && normalizarTexto(funcionarioLogado?.nome) === "lavinea souza";
+  const ehLavineaSouza = perfil === "secretaria" && normalizarTexto(funcionarioLogado?.nome) === "lavinea souza santos";
 
   /* =========================================================
      CARREGAR GRUPOS DO FIREBASE
@@ -2044,7 +2046,7 @@ function Cozinha({
     const { data: dadosSalvos, error } = await firebaseDb
       .from("registro_refeicoes")
       .insert(registrosParaBanco)
-      .select("id, data, grupo, refeicao, servida, horario, registrado_por");
+      .select("id, data, grupo, refeicao, servida, horario, registrado_por, _firestoreId");
 
     if (error) {
       console.error("ERRO AO SALVAR REGISTRO DE REFEIÇÃO:", error);
@@ -2057,6 +2059,7 @@ function Cozinha({
     const novosRegistros: RegistroCozinha[] = (dadosSalvos ?? []).map(
       (item: any) => ({
         id: Number(item.id),
+        _firestoreId: String(item._firestoreId ?? "").trim() || undefined,
         data: normalizarData(item.data),
         grupo: String(item.grupo ?? "").trim(),
         refeicao: normalizarRefeicao(item.refeicao) || refeicao,
@@ -2082,6 +2085,65 @@ function Cozinha({
 
     setPreparacaoSelecionada("");
     setFoto(null);
+  }
+
+  const ehSecretariaLavinea =
+    normalizarTexto(funcionarioLogado?.nome) === "lavinea souza santos";
+
+  function podeExcluirRegistro(registro: RegistroCozinha) {
+    if (ehSecretariaLavinea) return true;
+
+    return (
+      normalizarTexto(registro.registradoPor) ===
+      normalizarTexto(funcionarioLogado?.nome)
+    );
+  }
+
+  async function excluirRegistro(
+    registro: RegistroCozinha & { gruposExibidos?: string[]; firestoreIds?: string[] }
+  ) {
+    if (!podeExcluirRegistro(registro)) {
+      alert("Somente quem cadastrou este registro ou a secretária Lavinea Souza Santos pode excluí-lo.");
+      return;
+    }
+
+    if (!window.confirm(`Excluir o registro \"${registro.servida}\" de ${formatarDataBR(registro.data)}?`)) {
+      return;
+    }
+
+    const ids = Array.from(
+      new Set(
+        [
+          ...(registro.firestoreIds ?? []),
+          ...(registro._firestoreId ? [registro._firestoreId] : []),
+        ]
+          .filter(Boolean)
+          .map(String)
+      )
+    );
+
+    if (ids.length === 0) {
+      alert("Não foi possível identificar o registro no Firestore.");
+      return;
+    }
+
+    for (const firestoreId of ids) {
+      const resultado = await firebaseDb
+        .from("registro_refeicoes")
+        .delete(firestoreId);
+
+      if (resultado.error) {
+        console.error("ERRO AO EXCLUIR REGISTRO:", resultado.error);
+        alert(`Não foi possível excluir o registro.\n\n${resultado.error.message}`);
+        return;
+      }
+    }
+
+    setRegistros((anterior) =>
+      anterior.filter((item) => !ids.includes(String(item._firestoreId ?? "")))
+    );
+
+    alert("Registro excluído com sucesso.");
   }
 
   function handleFoto(
@@ -2125,7 +2187,7 @@ function Cozinha({
   };
 
   const registrosExibicao = useMemo(() => {
-    const mapa = new Map<string, RegistroCozinha & { gruposExibidos: string[] }>();
+    const mapa = new Map<string, RegistroCozinha & { gruposExibidos: string[]; firestoreIds: string[] }>();
 
     for (const registro of registros.filter((item) => normalizarData(item.data).substring(0, 7) === mesVisualizacao)) {
       const chave = [
@@ -2146,6 +2208,7 @@ function Cozinha({
         mapa.set(chave, {
           ...registro,
           gruposExibidos: [registro.grupo],
+          firestoreIds: registro._firestoreId ? [registro._firestoreId] : [],
         });
       }
     }
@@ -2377,6 +2440,10 @@ function Cozinha({
                 <th className="p-3">
                   Foto
                 </th>
+
+                <th className="p-3">
+                  Ações
+                </th>
               </tr>
             </thead>
 
@@ -2385,7 +2452,7 @@ function Cozinha({
                 0 && (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="p-8 text-center text-slate-500"
                   >
                     Nenhuma refeição
@@ -2441,6 +2508,20 @@ function Cozinha({
                         />
                       ) : (
                         <span className="text-xs text-slate-400">Sem foto</span>
+                      )}
+                    </td>
+
+                    <td className="p-3">
+                      {podeExcluirRegistro(registro) ? (
+                        <button
+                          type="button"
+                          onClick={() => excluirRegistro(registro)}
+                          className="rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50"
+                        >
+                          🗑️ Excluir
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-400">Sem permissão</span>
                       )}
                     </td>
                   </tr>
@@ -3426,7 +3507,7 @@ function Configuracoes() {
     setMensagem("Registro removido com sucesso."); await carregarTudo();
   }
 
-  const nomeGrupo = (i: RegistroConfiguracao) => String(i.nome ?? i.grupo ?? i.name ?? "").trim();
+  const obterNomeGrupo = (i: RegistroConfiguracao) => String(i.nome ?? i.grupo ?? i.name ?? "").trim();
 
   const cards = [
     { chave: "cardapio" as const, titulo: "Cardápio", total: cardapio.length, icone: "🍽️" },
@@ -3507,8 +3588,8 @@ function Configuracoes() {
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="text-lg font-bold text-slate-800">Grupos cadastrados</h3>
           <div className="mt-4 grid gap-2 sm:grid-cols-2">{grupos.length === 0 ? <p className="text-sm text-slate-500">Nenhum grupo cadastrado.</p> :
             grupos.map(i => <div key={String(i._firestoreId ?? i.id)} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-3">
-              <span className="font-semibold text-slate-800">{nomeGrupo(i)}</span>
-              <button type="button" onClick={() => remover("grupos", i, nomeGrupo(i))} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600">Remover</button>
+              <span className="font-semibold text-slate-800">{obterNomeGrupo(i)}</span>
+              <button type="button" onClick={() => remover("grupos", i, obterNomeGrupo(i))} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600">Remover</button>
             </div>)}</div>
         </div>
       </div>}
