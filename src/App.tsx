@@ -1,7 +1,6 @@
 import ExcelJS from "exceljs";
 
 import {
-  useCallback,
   useEffect,
   useMemo,
   useState,
@@ -34,8 +33,7 @@ type Tela =
   | "cozinha"
   | "professor"
   | "secretaria"
-  | "planilhas"
-  | "configuracoes";
+  | "planilhas";
 
 type Refeicao =
   | "Desjejum"
@@ -419,8 +417,11 @@ function App() {
     cargo: string;
   } | null>(sessaoInicial?.funcionarioLogado ?? null);
 
+<<<<<<< HEAD
   const ehLavineaSouza = perfil === "secretaria" && normalizarTexto(funcionarioLogado?.nome) === "lavinea souza santos";
 
+=======
+>>>>>>> 7d3ab03 (voltando ao inical)
   /* =========================================================
      CARREGAR GRUPOS DO FIREBASE
   ========================================================= */
@@ -455,83 +456,134 @@ function App() {
   }, [logado]);
 
   /* =========================================================
-     CARREGAR / ATUALIZAR CARDÁPIO DO FIREBASE
+     CARREGAR CARDÁPIO DO FIREBASE
   ========================================================= */
 
-  const atualizarCardapio = useCallback(async () => {
-    if (!logado) return;
-
-    setCarregandoCardapio(true);
-    setErroCardapio("");
-
-    try {
-      const { data, error } = await firebaseDb
-        .from("cardapio")
-        .select("id, refeicao, preparacao")
-        .order("id", { ascending: true });
-
-      if (error) {
-        console.error(
-          "ERRO FIREBASE AO CARREGAR CARDÁPIO:",
-          error
-        );
-        setErroCardapio(
-          `Erro ao carregar cardápio: ${error.message}`
-        );
-        return;
-      }
-
-      if (!data) {
-        setCardapio([]);
-        setErroCardapio(
-          "O Firebase não retornou dados."
-        );
-        return;
-      }
-
-      const dadosNormalizados: Cardapio[] = data
-        .map((item: any): Cardapio | null => {
-          const refeicao = normalizarRefeicao(item.refeicao);
-          const preparacao = String(item.preparacao ?? "").trim();
-
-          if (!refeicao || !preparacao) return null;
-
-          return {
-            id: Number(item.id),
-            refeicao,
-            preparacao,
-          };
-        })
-        .filter((item): item is Cardapio => item !== null);
-
-      setCardapio(dadosNormalizados);
-
-      if (dadosNormalizados.length === 0) {
-        setErroCardapio(
-          "A tabela cardapio respondeu, mas nenhum registro válido foi encontrado."
-        );
-      }
-    } catch (erro) {
-      console.error("💥 ERRO AO ATUALIZAR CARDÁPIO:", erro);
-
-      if (erro instanceof Error) {
-        setErroCardapio(
-          `Erro ao carregar cardápio: ${erro.message}`
-        );
-      } else {
-        setErroCardapio(
-          "Erro desconhecido ao carregar o cardápio."
-        );
-      }
-    } finally {
-      setCarregandoCardapio(false);
-    }
-  }, [logado]);
-
-  // Carregamento inicial e sempre que a sessão mudar.
   useEffect(() => {
-    atualizarCardapio();
-  }, [atualizarCardapio]);
+    let ativo = true;
+
+    async function carregarCardapio() {
+      if (!logado) return;
+      setCarregandoCardapio(true);
+      setErroCardapio("");
+
+      try {
+
+        const {
+          data,
+          error,
+        } = await firebaseDb
+          .from("cardapio")
+          .select("id, refeicao, preparacao")
+          .order("id", {
+            ascending: true,
+          });
+
+        if (!ativo) return;
+
+        if (error) {
+          console.error(
+            "ERRO FIREBASE AO CARREGAR CARDÁPIO:",
+            error
+          );
+
+          setErroCardapio(
+            `Erro ao carregar cardápio: ${error.message}`
+          );
+
+          setCardapio([]);
+
+          return;
+        }
+
+        if (!data) {
+          setCardapio([]);
+
+          setErroCardapio(
+            "O Firebase não retornou dados."
+          );
+
+          return;
+        }
+
+        const dadosNormalizados: Cardapio[] =
+          data
+            .map(
+              (
+                item: any
+              ): Cardapio | null => {
+                const refeicao =
+                  normalizarRefeicao(
+                    item.refeicao
+                  );
+
+                const preparacao =
+                  String(
+                    item.preparacao ??
+                      ""
+                  ).trim();
+
+                if (!refeicao || !preparacao) {
+                  return null;
+                }
+
+                return {
+                  id: Number(item.id),
+                  refeicao,
+                  preparacao,
+                };
+              }
+            )
+            .filter((item) => item !== null) as Cardapio[];
+
+        setCardapio(
+          dadosNormalizados
+        );
+
+        if (
+          dadosNormalizados.length ===
+          0
+        ) {
+          setErroCardapio(
+            "A tabela cardapio respondeu, mas nenhum registro válido foi encontrado."
+          );
+        }
+      } catch (erro) {
+        console.error(
+          "💥 ERRO INESPERADO:",
+          erro
+        );
+
+        if (!ativo) return;
+
+        setCardapio([]);
+
+        if (
+          erro instanceof Error
+        ) {
+          setErroCardapio(
+            `Erro ao carregar cardápio: ${erro.message}`
+          );
+        } else {
+          setErroCardapio(
+            "Erro desconhecido ao carregar o cardápio."
+          );
+        }
+      } finally {
+        if (ativo) {
+          setCarregandoCardapio(
+            false
+          );
+        }
+      }
+    }
+
+    carregarCardapio();
+
+    return () => {
+      ativo = false;
+    };
+  }, [logado]);
 
   /* =========================================================
      CARREGAR AVALIAÇÕES DO FIREBASE
@@ -1204,9 +1256,6 @@ function App() {
           nome: "Planilhas",
           icone: "📋",
         },
-        ...(ehLavineaSouza
-          ? [{ tela: "configuracoes" as Tela, nome: "Configurações", icone: "⚙️" }]
-          : []),
       ];
     }
 
@@ -1424,9 +1473,6 @@ function App() {
                 erroCardapio={
                   erroCardapio
                 }
-                atualizarCardapio={
-                  atualizarCardapio
-                }
                 grupos={grupos}
                 funcionarioLogado={funcionarioLogado}
               />
@@ -1466,8 +1512,6 @@ function App() {
           {tela === "secretaria" && (
             <DashboardResultados avaliacoes={avaliacoes} registros={registrosCozinha} />
           )}
-
-          {tela === "configuracoes" && ehLavineaSouza && <Configuracoes />}
         </div>
       </main>
     </div>
@@ -1863,7 +1907,6 @@ function Cozinha({
   cardapio,
   carregandoCardapio,
   erroCardapio,
-  atualizarCardapio,
   grupos,
   funcionarioLogado,
 }: {
@@ -1872,7 +1915,6 @@ function Cozinha({
   cardapio: Cardapio[];
   carregandoCardapio: boolean;
   erroCardapio: string;
-  atualizarCardapio: () => Promise<void>;
   grupos: Grupo[];
   funcionarioLogado: { nome: string; login: string } | null;
 }) {
@@ -1898,6 +1940,7 @@ function Cozinha({
      PREPARAÇÕES DO CARDÁPIO PARA A REFEIÇÃO
   ========================================================= */
 
+<<<<<<< HEAD
   const preparacoesDaRefeicao = useMemo(() => {
     const mapa = new Map<string, Cardapio>();
     const anoSelecionado = normalizarData(data).substring(0, 4);
@@ -1957,11 +2000,49 @@ function Cozinha({
       setPreparacaoSelecionada("");
     }
   }, [preparacoesDaRefeicao, preparacaoSelecionada]);
+=======
+ const preparacoesDaRefeicao = useMemo(() => {
+  const mapa = new Map<string, Cardapio>();
 
-  // Ao abrir/montar a tela Cozinha, busca novamente o cardápio no banco.
-  useEffect(() => {
-    atualizarCardapio();
-  }, [atualizarCardapio]);
+  // Ano selecionado no campo de data
+  const anoAtual = normalizarData(data).substring(0, 4);
+
+  for (const item of cardapio) {
+    if (
+      normalizarTexto(item.refeicao) !==
+      normalizarTexto(refeicao)
+    ) {
+      continue;
+    }
+
+    const preparacao = String(item.preparacao ?? "").trim();
+>>>>>>> 7d3ab03 (voltando ao inical)
+
+    if (!preparacao) continue;
+
+    const chave = normalizarTexto(preparacao);
+
+    // Verifica se a preparação já foi registrada
+    // em qualquer mês do mesmo ano
+    const jaRealizadaNoAno = registros.some((registro) => {
+      const dataRegistro = normalizarData(registro.data);
+
+      return (
+        dataRegistro.substring(0, 4) === anoAtual &&
+        normalizarTexto(registro.servida) === chave
+      );
+    });
+
+    // Se já foi registrada no ano, não aparece
+    if (jaRealizadaNoAno) continue;
+
+    if (!mapa.has(chave)) {
+      mapa.set(chave, item);
+    }
+  }
+
+  return Array.from(mapa.values());
+}, [cardapio, refeicao, registros, data]);
 
   const servida = preparacaoSelecionada;
 
@@ -2300,23 +2381,6 @@ function Cozinha({
             >
               Preparação servida
             </label>
-
-            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <span className="text-xs text-slate-500">
-                {carregandoCardapio
-                  ? "Atualizando cardápio..."
-                  : `${preparacoesDaRefeicao.length} preparação(ões) disponível(is)`}
-              </span>
-
-              <button
-                type="button"
-                onClick={() => atualizarCardapio()}
-                disabled={carregandoCardapio}
-                className="rounded-xl border border-emerald-600 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {carregandoCardapio ? "Atualizando..." : "↻ Atualizar cardápio"}
-              </button>
-            </div>
 
             <select
               id="cozinha-preparacao-servida"
@@ -3409,6 +3473,7 @@ function ProfessorAssistente({
   );
 }
 
+<<<<<<< HEAD
 
 /* =========================================================
    CONFIGURAÇÕES — RESTRITA À SECRETARIA LAVÍNEA SOUZA
@@ -3597,6 +3662,8 @@ function Configuracoes() {
   );
 }
 
+=======
+>>>>>>> 7d3ab03 (voltando ao inical)
 function DashboardResultados({
   avaliacoes,
   registros,
