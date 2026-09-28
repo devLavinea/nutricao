@@ -2143,13 +2143,9 @@ function Cozinha({
     leitor.readAsDataURL(arquivo);
   }
 
-  const [mesVisualizacao, setMesVisualizacao] = useState(() => obterDataHoje().substring(0, 7));
-
-  useEffect(() => {
-    const atualizarMes = () => setMesVisualizacao(obterDataHoje().substring(0, 7));
-    const timer = window.setInterval(atualizarMes, 60000);
-    return () => window.clearInterval(timer);
-  }, []);
+  const [mesVisualizacao, setMesVisualizacao] = useState(() =>
+    obterDataHoje().substring(0, 7)
+  );
 
   const mesesDisponiveis = useMemo(() => {
     const conjunto = new Set<string>([obterDataHoje().substring(0, 7)]);
