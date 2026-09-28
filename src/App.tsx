@@ -3244,7 +3244,14 @@ function ProfessorAssistente({
       return (
         <tr
           key={registro.id}
-          className="border-b border-slate-100"
+          title={
+            avaliado && avaliacaoDoRegistro
+              ? `Avaliação: ${avaliacaoDoRegistro.alunos} alunos | ${avaliacaoDoRegistro.gostaram} gostaram`
+              : undefined
+          }
+          className={`border-b border-slate-100 ${
+            avaliado ? "cursor-help" : ""
+          }`}
         >
 
           {/* AÇÃO */}
@@ -3266,7 +3273,7 @@ function ProfessorAssistente({
                       }
                       className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-100"
                     >
-                      🗑️ Excluir avaliação
+                     Excluir avaliação
                     </button>
                   )}
               </div>
