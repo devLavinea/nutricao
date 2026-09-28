@@ -2741,17 +2741,21 @@ function ProfessorAssistente({
     const dataNormalizada = normalizarData(data);
     const grupoNormalizado = normalizarTexto(grupo);
 
-    const avaliacaoDoDiaEGrupo = avaliacoes
+    const totaisDoDiaEGrupo = avaliacoes
       .filter(
         (avaliacao) =>
           normalizarData(avaliacao.data) === dataNormalizada &&
           normalizarTexto(avaliacao.grupo) === grupoNormalizado &&
           Number(avaliacao.alunos) > 0
       )
-      .sort((a, b) => Number(b.id) - Number(a.id))[0];
+      .map((avaliacao) => Math.max(0, Number(avaliacao.alunos) || 0));
 
-    return avaliacaoDoDiaEGrupo
-      ? Math.max(0, Number(avaliacaoDoDiaEGrupo.alunos) || 0)
+    // O total de alunos pertence ao DIA + GRUPO, e não à refeição.
+    // Se já houver mais de uma avaliação desse mesmo grupo no dia,
+    // usa o maior total registrado para evitar que uma avaliação antiga
+    // com valor menor (ex.: 8) sobrescreva o total correto (ex.: 9).
+    return totaisDoDiaEGrupo.length > 0
+      ? Math.max(...totaisDoDiaEGrupo)
       : 0;
   };
 
