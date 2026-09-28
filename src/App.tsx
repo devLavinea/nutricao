@@ -2731,74 +2731,6 @@ function ProfessorAssistente({
         registroSelecionadoId
     ) ?? null;
 
-  // Reaproveita o total de alunos da avaliação ANTERIOR
-  // do mesmo grupo, independentemente do dia.
-  const obterTotalAlunosDaAvaliacaoAnterior = (
-    registroAtual: RegistroCozinha
-  ): number => {
-    const dataAtual = normalizarData(registroAtual.data);
-    const grupoAtual = normalizarTexto(registroAtual.grupo);
-    const registroAtualId = Number(registroAtual.id) || 0;
-
-    const avaliacoesAnteriores = avaliacoes
-      .filter((avaliacao) => {
-        const dataAvaliacao = normalizarData(avaliacao.data);
-        const grupoAvaliacao = normalizarTexto(avaliacao.grupo);
-        const registroAvaliacaoId =
-          Number(avaliacao.registroId) || 0;
-        const totalAlunos =
-          Number(avaliacao.alunos) || 0;
-
-        if (grupoAvaliacao !== grupoAtual) {
-          return false;
-        }
-
-        if (totalAlunos <= 0) {
-          return false;
-        }
-
-        // Avaliação de um dia anterior.
-        if (dataAvaliacao < dataAtual) {
-          return true;
-        }
-
-        // Se for no mesmo dia, considera somente registros
-        // anteriores ao registro que está sendo avaliado.
-        if (
-          dataAvaliacao === dataAtual &&
-          registroAvaliacaoId < registroAtualId
-        ) {
-          return true;
-        }
-
-        return false;
-      })
-      .sort((a, b) => {
-        const dataA = normalizarData(a.data);
-        const dataB = normalizarData(b.data);
-
-        if (dataA !== dataB) {
-          return dataB.localeCompare(dataA);
-        }
-
-        // No mesmo dia, pega a avaliação do registro
-        // cronologicamente mais próximo do atual.
-        return (
-          (Number(b.registroId) || 0) -
-          (Number(a.registroId) || 0)
-        );
-      });
-
-    if (avaliacoesAnteriores.length === 0) {
-      return 0;
-    }
-
-    return Math.max(
-      0,
-      Number(avaliacoesAnteriores[0].alunos) || 0
-    );
-  };
-
   /*
    * Verifica somente se o registro
    * específico já foi avaliado.
@@ -2948,9 +2880,8 @@ function ProfessorAssistente({
       registro.id
     );
 
-    // Se outra refeição do mesmo dia já foi avaliada,
-    // reaproveita automaticamente o total de alunos informado.
-    setAlunos(obterTotalAlunosDaAvaliacaoAnterior(registro));
+    // Sempre inicia uma nova avaliação com o total de alunos zerado.
+    setAlunos(0);
     setGostaram(0);
     setFotoAvaliacao(null);
     setErroAvaliacao("");
