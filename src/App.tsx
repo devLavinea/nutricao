@@ -2731,19 +2731,28 @@ function ProfessorAssistente({
         registroSelecionadoId
     ) ?? null;
 
-  // O total de alunos é compartilhado entre as avaliações do mesmo dia.
-  // Assim, depois que um professor informa esse total em uma refeição,
-  // ele é reutilizado automaticamente nas demais refeições daquele dia.
-  const obterTotalAlunosDoDia = (data: string): number => {
-    const avaliacaoDoDia = avaliacoes
+  // O total de alunos é reutilizado somente dentro do mesmo DIA + GRUPO.
+  // Ex.: uma avaliação do GRUPO 2A em 28/08 preenche automaticamente
+  // as demais avaliações do 2A em 28/08, mas nunca o 2B, 3A ou 3B.
+  const obterTotalAlunosDoDiaEGrupo = (
+    data: string,
+    grupo: string
+  ): number => {
+    const dataNormalizada = normalizarData(data);
+    const grupoNormalizado = normalizarTexto(grupo);
+
+    const avaliacaoDoDiaEGrupo = avaliacoes
       .filter(
         (avaliacao) =>
-          normalizarData(avaliacao.data) === normalizarData(data) &&
+          normalizarData(avaliacao.data) === dataNormalizada &&
+          normalizarTexto(avaliacao.grupo) === grupoNormalizado &&
           Number(avaliacao.alunos) > 0
       )
       .sort((a, b) => Number(b.id) - Number(a.id))[0];
 
-    return avaliacaoDoDia ? Math.max(0, Number(avaliacaoDoDia.alunos) || 0) : 0;
+    return avaliacaoDoDiaEGrupo
+      ? Math.max(0, Number(avaliacaoDoDiaEGrupo.alunos) || 0)
+      : 0;
   };
 
   /*
@@ -2897,7 +2906,7 @@ function ProfessorAssistente({
 
     // Se outra refeição do mesmo dia já foi avaliada,
     // reaproveita automaticamente o total de alunos informado.
-    setAlunos(obterTotalAlunosDoDia(registro.data));
+    setAlunos(obterTotalAlunosDoDiaEGrupo(registro.data, registro.grupo));
     setGostaram(0);
     setFotoAvaliacao(null);
     setErroAvaliacao("");
@@ -3244,22 +3253,29 @@ function ProfessorAssistente({
       return (
         <tr
           key={registro.id}
-          title={
-            avaliado && avaliacaoDoRegistro
-              ? `Avaliação: ${avaliacaoDoRegistro.alunos} alunos | ${avaliacaoDoRegistro.gostaram} gostaram`
-              : undefined
-          }
           className={`border-b border-slate-100 ${
-            avaliado ? "cursor-help" : ""
+            avaliado ? "" : ""
           }`}
         >
 
           {/* AÇÃO */}
           <td className="p-3">
             {avaliado ? (
-              <div className="flex flex-col items-start gap-2">
-                <span className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-500">
-                  ✓ Já avaliada
+              <div className="relative inline-flex flex-col items-start gap-2">
+                <span className="group relative inline-flex">
+                  <span className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-500">
+                    ✓ Já avaliada
+                  </span>
+                  {avaliacaoDoRegistro && (
+                    <span
+                      role="tooltip"
+                      className="pointer-events-none absolute left-0 top-full z-50 mt-2 w-56 rounded-xl border border-slate-200 bg-slate-900 px-4 py-3 text-left text-xs font-medium text-white opacity-0 shadow-xl transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+                    >
+                      <span className="block font-bold text-white">Dados da avaliação</span>
+                      <span className="mt-1 block">Total de alunos: {Math.max(0, Number(avaliacaoDoRegistro.alunos) || 0)}</span>
+                      <span className="block">Gostaram: {Math.max(0, Number(avaliacaoDoRegistro.gostaram) || 0)}</span>
+                    </span>
+                  )}
                 </span>
 
                 {avaliacaoFoiFeitaPeloUsuarioLogado &&
