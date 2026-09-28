@@ -52,6 +52,7 @@ type Cardapio = {
 
 type RegistroCozinha = {
   id: number;
+  firestoreId?: string;
   data: string;
   grupo: Grupo;
   refeicao: Refeicao;
@@ -336,6 +337,7 @@ function App() {
       const registrosNormalizados: RegistroCozinha[] = (data ?? []).map(
         (item: any) => ({
           id: Number(item.id),
+          firestoreId: String(item._firestoreId ?? "").trim() || undefined,
           data: normalizarData(item.data),
           grupo: String(item.grupo ?? "").trim(),
           refeicao: normalizarRefeicao(item.refeicao) || ("Almoço" as Refeicao),
@@ -2082,11 +2084,20 @@ function Cozinha({
     setFoto(null);
   }
 
-  async function excluirRegistro(registro: RegistroCozinha & { gruposExibidos: string[]; idsExibidos: number[] }) {
+  async function excluirRegistro(
+    registro: RegistroCozinha & {
+      gruposExibidos: string[];
+      idsExibidos: number[];
+      firestoreIdsExibidos: string[];
+    }
+  ) {
     const nomeLogado = String(funcionarioLogado?.nome ?? "").trim();
     const nomeRegistrado = String(registro.registradoPor ?? "").trim();
 
-    if (!nomeLogado || normalizarTexto(nomeLogado) !== normalizarTexto(nomeRegistrado)) {
+    if (
+      !nomeLogado ||
+      normalizarTexto(nomeLogado) !== normalizarTexto(nomeRegistrado)
+    ) {
       alert("Você só pode excluir registros realizados pelo seu próprio usuário.");
       return;
     }
@@ -2103,28 +2114,61 @@ function Cozinha({
         )
       )
     );
-    if (ids.length === 0) {
+
+    const firestoreIds = Array.from(
+      new Set(
+        registro.firestoreIdsExibidos.filter(
+          (id) => Boolean(String(id ?? "").trim())
+        )
+      )
+    );
+
+    if (ids.length === 0 && firestoreIds.length === 0) {
       alert("Não foi possível identificar o registro para exclusão.");
       return;
     }
 
-    const { error } = await firebaseDb
+    // O adapter usa o ID interno do Firestore quando ele está disponível.
+    // O ID numérico também é enviado como fallback para registros antigos.
+    const { data: excluidos, error } = await firebaseDb
       .from("registro_refeicoes")
       .delete()
-      .in("id", ids)
+      .byIds({ firestoreIds, ids })
       .eq("registrado_por", nomeRegistrado);
 
     if (error) {
       console.error("ERRO AO EXCLUIR REGISTRO DE REFEIÇÃO:", error);
-      alert(`Não foi possível excluir o registro.\n\n${error.message || "Verifique as permissões do Firebase."}`);
+      alert(
+        `Não foi possível excluir o registro.\n\n${
+          error.message || "Verifique as permissões do Firebase."
+        }`
+      );
       return;
     }
 
+    if (!excluidos || excluidos.length === 0) {
+      alert("O Firebase não encontrou o registro correspondente para excluir.");
+      return;
+    }
+
+    // Só remove da tela depois que o Firestore confirmou a exclusão.
     setRegistros((anterior) =>
-      anterior.filter((item) => !ids.some((id) => String(id) === String(item.id)))
+      anterior.filter((item) => {
+        const correspondeFirestore =
+          Boolean(item.firestoreId) &&
+          firestoreIds.includes(String(item.firestoreId));
+        const correspondeId = ids.some(
+          (id) => String(id) === String(item.id)
+        );
+        return !correspondeFirestore && !correspondeId;
+      })
     );
 
-    alert("Registro excluído com sucesso.");
+    alert(
+      excluidos.length === 1
+        ? "Registro excluído do banco de dados com sucesso."
+        : `${excluidos.length} registros excluídos do banco de dados com sucesso.`
+    );
   }
 
   function handleFoto(
@@ -2164,7 +2208,7 @@ function Cozinha({
   };
 
   const registrosExibicao = useMemo(() => {
-    const mapa = new Map<string, RegistroCozinha & { gruposExibidos: string[]; idsExibidos: number[] }>();
+    const mapa = new Map<string, RegistroCozinha & { gruposExibidos: string[]; idsExibidos: number[]; firestoreIdsExibidos: string[] }>();
 
     for (const registro of registros.filter((item) => normalizarData(item.data).substring(0, 7) === mesVisualizacao)) {
       const chave = [
@@ -2184,11 +2228,15 @@ function Cozinha({
         if (!existente.idsExibidos.includes(registro.id)) {
           existente.idsExibidos.push(registro.id);
         }
+        if (registro.firestoreId && !existente.firestoreIdsExibidos.includes(registro.firestoreId)) {
+          existente.firestoreIdsExibidos.push(registro.firestoreId);
+        }
       } else {
         mapa.set(chave, {
           ...registro,
           gruposExibidos: [registro.grupo],
           idsExibidos: [registro.id],
+          firestoreIdsExibidos: registro.firestoreId ? [registro.firestoreId] : [],
         });
       }
     }

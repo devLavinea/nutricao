@@ -40,10 +40,19 @@ type QueryState = {
 
 function pickFields(data: Record<string, any>, fields?: string[]) {
   if (!fields || fields.length === 0) return data;
+
   const result: Record<string, any> = {};
+
   for (const field of fields) {
     if (field in data) result[field] = data[field];
   }
+
+  // O ID interno do Firestore é necessário para operações seguras de exclusão.
+  // Ele não substitui o campo numérico "id" do aplicativo.
+  if ("_firestoreId" in data) {
+    result._firestoreId = data._firestoreId;
+  }
+
   return result;
 }
 
@@ -67,6 +76,7 @@ function formatFirebaseError(error: any) {
 
 async function executeSelect(state: QueryState) {
   const ref = collection(db, state.collectionName);
+
   const firestoreQuery =
     state.orders.length === 1
       ? query(
@@ -82,17 +92,24 @@ async function executeSelect(state: QueryState) {
 
   let rows: Record<string, any>[] = snapshot.docs.map((item) => {
     const data = item.data();
-    return { id: data.id ?? item.id, ...data, _firestoreId: item.id };
+
+    return {
+      id: data.id ?? item.id,
+      ...data,
+      _firestoreId: item.id,
+    };
   });
 
   if (state.orders.length > 1) {
     rows.sort((a, b) => {
       for (const order of state.orders) {
         const comparison = compareValues(a[order.field], b[order.field]);
+
         if (comparison !== 0) {
           return order.ascending ? comparison : -comparison;
         }
       }
+
       return 0;
     });
   }
@@ -111,7 +128,10 @@ class SelectBuilder {
     this.state = {
       collectionName,
       selectedFields: fields
-        ? fields.split(",").map((field) => field.trim()).filter(Boolean)
+        ? fields
+            .split(",")
+            .map((field) => field.trim())
+            .filter(Boolean)
         : undefined,
       orders: [],
     };
@@ -122,6 +142,7 @@ class SelectBuilder {
       field,
       ascending: options?.ascending ?? true,
     });
+
     return this;
   }
 
@@ -131,8 +152,14 @@ class SelectBuilder {
   }
 
   then<TResult1 = { data: any[] | null; error: any }, TResult2 = never>(
-    onfulfilled?: ((value: { data: any[] | null; error: any }) => TResult1 | PromiseLike<TResult1>) | null,
-    onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null
+    onfulfilled?:
+      | ((
+          value: { data: any[] | null; error: any }
+        ) => TResult1 | PromiseLike<TResult1>)
+      | null,
+    onrejected?:
+      | ((reason: any) => TResult2 | PromiseLike<TResult2>)
+      | null
   ): Promise<TResult1 | TResult2> {
     return executeSelect(this.state)
       .then((data) => ({ data, error: null }))
@@ -160,10 +187,17 @@ class InsertBuilder {
 
       for (let index = 0; index < items.length; index++) {
         const item = { ...items[index] };
-        if (item.id == null) item.id = Date.now() + index;
+
+        if (item.id == null) {
+          item.id = Date.now() + index;
+        }
 
         const ref = await addDoc(collection(db, this.collectionName), item);
-        saved.push({ ...item, _firestoreId: ref.id });
+
+        saved.push({
+          ...item,
+          _firestoreId: ref.id,
+        });
       }
 
       return { data: saved, error: null };
@@ -174,13 +208,22 @@ class InsertBuilder {
 
   async single() {
     const result = await this.select();
-    return { data: result.data?.[0] ?? null, error: result.error };
+    return {
+      data: result.data?.[0] ?? null,
+      error: result.error,
+    };
   }
 }
+
+type DeleteIds = {
+  firestoreIds?: string[];
+  ids?: any[];
+};
 
 class DeleteBuilder {
   private readonly collectionName: string;
   private ids: any[] | null = null;
+  private firestoreIds: string[] | null = null;
   private filters: { field: string; value: any }[] = [];
 
   constructor(collectionName: string) {
@@ -189,9 +232,32 @@ class DeleteBuilder {
 
   in(field: string, values: any[]): this {
     if (field !== "id") {
-      throw new Error(`Exclusão em lote não suportada para o campo "${field}".`);
+      throw new Error(
+        `Exclusão em lote não suportada para o campo "${field}".`
+      );
     }
+
     this.ids = values;
+    return this;
+  }
+
+  byIds({ firestoreIds = [], ids = [] }: DeleteIds): this {
+    this.firestoreIds = Array.from(
+      new Set(
+        firestoreIds
+          .map((id) => String(id ?? "").trim())
+          .filter(Boolean)
+      )
+    );
+
+    this.ids = Array.from(
+      new Set(
+        ids.filter(
+          (id) => id !== null && id !== undefined && String(id).trim() !== ""
+        )
+      )
+    );
+
     return this;
   }
 
@@ -203,54 +269,86 @@ class DeleteBuilder {
   async execute() {
     try {
       const snapshot = await getDocs(collection(db, this.collectionName));
+
       const docsToDelete = snapshot.docs.filter((item) => {
         const data = item.data();
-        const documentId = String(item.id);
+        const firestoreId = String(item.id);
         const storedId = data.id == null ? "" : String(data.id);
+
+        const hasFirestoreIds =
+          Array.isArray(this.firestoreIds) && this.firestoreIds.length > 0;
+        const hasIds = Array.isArray(this.ids) && this.ids.length > 0;
+
         const matchesIds =
-          !this.ids ||
-          this.ids.some((id) => {
-            const targetId = String(id);
-            return targetId === documentId || targetId === storedId;
-          });
-        const matchesFilters = this.filters.every(
-          ({ field, value }) => String(data[field] ?? "") === String(value ?? "")
-        );
+          !hasFirestoreIds && !hasIds
+            ? true
+            : (hasFirestoreIds && this.firestoreIds!.includes(firestoreId)) ||
+              (hasIds &&
+                this.ids!.some((id) => String(id) === storedId));
+
+        const matchesFilters = this.filters.every(({ field, value }) => {
+          return (
+            String(data[field] ?? "").trim() ===
+            String(value ?? "").trim()
+          );
+        });
+
         return matchesIds && matchesFilters;
       });
 
-      await Promise.all(docsToDelete.map((item) => deleteDoc(item.ref)));
-
-      if (this.ids && docsToDelete.length === 0) {
+      if (docsToDelete.length === 0) {
         return {
           data: null,
           error: {
             code: "firebase/not-found",
-            message: "Nenhum registro correspondente foi encontrado para exclusão.",
+            message:
+              "Nenhum registro correspondente foi encontrado para exclusão.",
           },
         };
       }
 
-      return { data: docsToDelete.map((item) => item.id), error: null };
+      // Exclui os documentos reais do Firestore.
+      await Promise.all(
+        docsToDelete.map((item) => deleteDoc(item.ref))
+      );
+
+      return {
+        data: docsToDelete.map((item) => item.id),
+        error: null,
+      };
     } catch (error) {
-      return { data: null, error: formatFirebaseError(error) };
+      return {
+        data: null,
+        error: formatFirebaseError(error),
+      };
     }
   }
 
   then<TResult1 = { data: string[] | null; error: any }, TResult2 = never>(
-    onfulfilled?: ((value: { data: string[] | null; error: any }) => TResult1 | PromiseLike<TResult1>) | null,
-    onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null
+    onfulfilled?:
+      | ((
+          value: { data: string[] | null; error: any }
+        ) => TResult1 | PromiseLike<TResult1>)
+      | null,
+    onrejected?:
+      | ((reason: any) => TResult2 | PromiseLike<TResult2>)
+      | null
   ): Promise<TResult1 | TResult2> {
-    return this.execute().then(onfulfilled as any, onrejected as any);
+    return this.execute().then(
+      onfulfilled as any,
+      onrejected as any
+    );
   }
 }
 
 class FirebaseDatabaseAdapter {
   from(collectionName: string) {
     return {
-      select: (fields?: string) => new SelectBuilder(collectionName, fields),
-      insert: (payload: Record<string, any> | Record<string, any>[]) =>
-        new InsertBuilder(collectionName, payload),
+      select: (fields?: string) =>
+        new SelectBuilder(collectionName, fields),
+      insert: (
+        payload: Record<string, any> | Record<string, any>[]
+      ) => new InsertBuilder(collectionName, payload),
       delete: () => new DeleteBuilder(collectionName),
     };
   }
