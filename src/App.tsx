@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 
 import {
+  useCallback,
   useEffect,
   useMemo,
   useState,
@@ -449,134 +450,83 @@ function App() {
   }, [logado]);
 
   /* =========================================================
-     CARREGAR CARDÁPIO DO FIREBASE
+     CARREGAR / ATUALIZAR CARDÁPIO DO FIREBASE
   ========================================================= */
 
-  useEffect(() => {
-    let ativo = true;
+  const atualizarCardapio = useCallback(async () => {
+    if (!logado) return;
 
-    async function carregarCardapio() {
-      if (!logado) return;
-      setCarregandoCardapio(true);
-      setErroCardapio("");
+    setCarregandoCardapio(true);
+    setErroCardapio("");
 
-      try {
+    try {
+      const { data, error } = await firebaseDb
+        .from("cardapio")
+        .select("id, refeicao, preparacao")
+        .order("id", { ascending: true });
 
-        const {
-          data,
-          error,
-        } = await firebaseDb
-          .from("cardapio")
-          .select("id, refeicao, preparacao")
-          .order("id", {
-            ascending: true,
-          });
-
-        if (!ativo) return;
-
-        if (error) {
-          console.error(
-            "ERRO FIREBASE AO CARREGAR CARDÁPIO:",
-            error
-          );
-
-          setErroCardapio(
-            `Erro ao carregar cardápio: ${error.message}`
-          );
-
-          setCardapio([]);
-
-          return;
-        }
-
-        if (!data) {
-          setCardapio([]);
-
-          setErroCardapio(
-            "O Firebase não retornou dados."
-          );
-
-          return;
-        }
-
-        const dadosNormalizados: Cardapio[] =
-          data
-            .map(
-              (
-                item: any
-              ): Cardapio | null => {
-                const refeicao =
-                  normalizarRefeicao(
-                    item.refeicao
-                  );
-
-                const preparacao =
-                  String(
-                    item.preparacao ??
-                      ""
-                  ).trim();
-
-                if (!refeicao || !preparacao) {
-                  return null;
-                }
-
-                return {
-                  id: Number(item.id),
-                  refeicao,
-                  preparacao,
-                };
-              }
-            )
-            .filter((item) => item !== null) as Cardapio[];
-
-        setCardapio(
-          dadosNormalizados
-        );
-
-        if (
-          dadosNormalizados.length ===
-          0
-        ) {
-          setErroCardapio(
-            "A tabela cardapio respondeu, mas nenhum registro válido foi encontrado."
-          );
-        }
-      } catch (erro) {
+      if (error) {
         console.error(
-          "💥 ERRO INESPERADO:",
-          erro
+          "ERRO FIREBASE AO CARREGAR CARDÁPIO:",
+          error
         );
-
-        if (!ativo) return;
-
-        setCardapio([]);
-
-        if (
-          erro instanceof Error
-        ) {
-          setErroCardapio(
-            `Erro ao carregar cardápio: ${erro.message}`
-          );
-        } else {
-          setErroCardapio(
-            "Erro desconhecido ao carregar o cardápio."
-          );
-        }
-      } finally {
-        if (ativo) {
-          setCarregandoCardapio(
-            false
-          );
-        }
+        setErroCardapio(
+          `Erro ao carregar cardápio: ${error.message}`
+        );
+        return;
       }
+
+      if (!data) {
+        setCardapio([]);
+        setErroCardapio(
+          "O Firebase não retornou dados."
+        );
+        return;
+      }
+
+      const dadosNormalizados: Cardapio[] = data
+        .map((item: any): Cardapio | null => {
+          const refeicao = normalizarRefeicao(item.refeicao);
+          const preparacao = String(item.preparacao ?? "").trim();
+
+          if (!refeicao || !preparacao) return null;
+
+          return {
+            id: Number(item.id),
+            refeicao,
+            preparacao,
+          };
+        })
+        .filter((item): item is Cardapio => item !== null);
+
+      setCardapio(dadosNormalizados);
+
+      if (dadosNormalizados.length === 0) {
+        setErroCardapio(
+          "A tabela cardapio respondeu, mas nenhum registro válido foi encontrado."
+        );
+      }
+    } catch (erro) {
+      console.error("💥 ERRO AO ATUALIZAR CARDÁPIO:", erro);
+
+      if (erro instanceof Error) {
+        setErroCardapio(
+          `Erro ao carregar cardápio: ${erro.message}`
+        );
+      } else {
+        setErroCardapio(
+          "Erro desconhecido ao carregar o cardápio."
+        );
+      }
+    } finally {
+      setCarregandoCardapio(false);
     }
-
-    carregarCardapio();
-
-    return () => {
-      ativo = false;
-    };
   }, [logado]);
+
+  // Carregamento inicial e sempre que a sessão mudar.
+  useEffect(() => {
+    atualizarCardapio();
+  }, [atualizarCardapio]);
 
   /* =========================================================
      CARREGAR AVALIAÇÕES DO FIREBASE
@@ -1466,6 +1416,9 @@ function App() {
                 erroCardapio={
                   erroCardapio
                 }
+                atualizarCardapio={
+                  atualizarCardapio
+                }
                 grupos={grupos}
                 funcionarioLogado={funcionarioLogado}
               />
@@ -1900,6 +1853,7 @@ function Cozinha({
   cardapio,
   carregandoCardapio,
   erroCardapio,
+  atualizarCardapio,
   grupos,
   funcionarioLogado,
 }: {
@@ -1908,6 +1862,7 @@ function Cozinha({
   cardapio: Cardapio[];
   carregandoCardapio: boolean;
   erroCardapio: string;
+  atualizarCardapio: () => Promise<void>;
   grupos: Grupo[];
   funcionarioLogado: { nome: string; login: string } | null;
 }) {
@@ -1929,41 +1884,41 @@ function Cozinha({
   const [foto, setFoto] =
     useState<string | null>(null);
 
- /* =========================================================
-   PREPARAÇÕES DO CARDÁPIO PARA A REFEIÇÃO
-========================================================= */
+  /* =========================================================
+     PREPARAÇÕES DO CARDÁPIO PARA A REFEIÇÃO
+  ========================================================= */
 
-const preparacoesDaRefeicao = useMemo(() => {
-  const mapa = new Map<string, Cardapio>();
+  const preparacoesDaRefeicao = useMemo(() => {
+    const mapa = new Map<string, Cardapio>();
 
-  for (const item of cardapio) {
-    // Mostra somente as preparações da refeição selecionada
-    if (
-      normalizarTexto(item.refeicao) !==
-      normalizarTexto(refeicao)
-    ) {
-      continue;
+    for (const item of cardapio) {
+      if (
+        normalizarTexto(item.refeicao) !==
+        normalizarTexto(refeicao)
+      ) {
+        continue;
+      }
+
+      const preparacao = String(item.preparacao ?? "").trim();
+      if (!preparacao) continue;
+
+      const chave = normalizarTexto(preparacao);
+
+      // O cardápio é a fonte da lista.
+      // Uma preparação já servida não é removida daqui.
+      if (!mapa.has(chave)) {
+        mapa.set(chave, item);
+      }
     }
 
-    const preparacao = String(
-      item.preparacao ?? ""
-    ).trim();
+    return Array.from(mapa.values());
+  }, [cardapio, refeicao]);
 
-    if (!preparacao) {
-      continue;
-    }
+  // Ao abrir/montar a tela Cozinha, busca novamente o cardápio no banco.
+  useEffect(() => {
+    atualizarCardapio();
+  }, [atualizarCardapio]);
 
-    // Normaliza somente para evitar duplicações
-    // dentro da mesma refeição.
-    const chave = normalizarTexto(preparacao);
-
-    if (!mapa.has(chave)) {
-      mapa.set(chave, item);
-    }
-  }
-
-  return Array.from(mapa.values());
-}, [cardapio, refeicao]);
   const servida = preparacaoSelecionada;
 
   
@@ -2222,6 +2177,23 @@ const preparacoesDaRefeicao = useMemo(() => {
             >
               Preparação servida
             </label>
+
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <span className="text-xs text-slate-500">
+                {carregandoCardapio
+                  ? "Atualizando cardápio..."
+                  : `${preparacoesDaRefeicao.length} preparação(ões) disponível(is)`}
+              </span>
+
+              <button
+                type="button"
+                onClick={() => atualizarCardapio()}
+                disabled={carregandoCardapio}
+                className="rounded-xl border border-emerald-600 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {carregandoCardapio ? "Atualizando..." : "↻ Atualizar cardápio"}
+              </button>
+            </div>
 
             <select
               id="cozinha-preparacao-servida"
