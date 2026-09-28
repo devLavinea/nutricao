@@ -2731,32 +2731,72 @@ function ProfessorAssistente({
         registroSelecionadoId
     ) ?? null;
 
-  // O total de alunos é reutilizado somente dentro do mesmo DIA + GRUPO.
-  // Ex.: uma avaliação do GRUPO 2A em 28/08 preenche automaticamente
-  // as demais avaliações do 2A em 28/08, mas nunca o 2B, 3A ou 3B.
-  const obterTotalAlunosDoDiaEGrupo = (
-    data: string,
-    grupo: string
+  // Reaproveita o total de alunos da avaliação ANTERIOR
+  // do mesmo grupo, independentemente do dia.
+  const obterTotalAlunosDaAvaliacaoAnterior = (
+    registroAtual: RegistroCozinha
   ): number => {
-    const dataNormalizada = normalizarData(data);
-    const grupoNormalizado = normalizarTexto(grupo);
+    const dataAtual = normalizarData(registroAtual.data);
+    const grupoAtual = normalizarTexto(registroAtual.grupo);
+    const registroAtualId = Number(registroAtual.id) || 0;
 
-    const totaisDoDiaEGrupo = avaliacoes
-      .filter(
-        (avaliacao) =>
-          normalizarData(avaliacao.data) === dataNormalizada &&
-          normalizarTexto(avaliacao.grupo) === grupoNormalizado &&
-          Number(avaliacao.alunos) > 0
-      )
-      .map((avaliacao) => Math.max(0, Number(avaliacao.alunos) || 0));
+    const avaliacoesAnteriores = avaliacoes
+      .filter((avaliacao) => {
+        const dataAvaliacao = normalizarData(avaliacao.data);
+        const grupoAvaliacao = normalizarTexto(avaliacao.grupo);
+        const registroAvaliacaoId =
+          Number(avaliacao.registroId) || 0;
+        const totalAlunos =
+          Number(avaliacao.alunos) || 0;
 
-    // O total de alunos pertence ao DIA + GRUPO, e não à refeição.
-    // Se já houver mais de uma avaliação desse mesmo grupo no dia,
-    // usa o maior total registrado para evitar que uma avaliação antiga
-    // com valor menor (ex.: 8) sobrescreva o total correto (ex.: 9).
-    return totaisDoDiaEGrupo.length > 0
-      ? Math.max(...totaisDoDiaEGrupo)
-      : 0;
+        if (grupoAvaliacao !== grupoAtual) {
+          return false;
+        }
+
+        if (totalAlunos <= 0) {
+          return false;
+        }
+
+        // Avaliação de um dia anterior.
+        if (dataAvaliacao < dataAtual) {
+          return true;
+        }
+
+        // Se for no mesmo dia, considera somente registros
+        // anteriores ao registro que está sendo avaliado.
+        if (
+          dataAvaliacao === dataAtual &&
+          registroAvaliacaoId < registroAtualId
+        ) {
+          return true;
+        }
+
+        return false;
+      })
+      .sort((a, b) => {
+        const dataA = normalizarData(a.data);
+        const dataB = normalizarData(b.data);
+
+        if (dataA !== dataB) {
+          return dataB.localeCompare(dataA);
+        }
+
+        // No mesmo dia, pega a avaliação do registro
+        // cronologicamente mais próximo do atual.
+        return (
+          (Number(b.registroId) || 0) -
+          (Number(a.registroId) || 0)
+        );
+      });
+
+    if (avaliacoesAnteriores.length === 0) {
+      return 0;
+    }
+
+    return Math.max(
+      0,
+      Number(avaliacoesAnteriores[0].alunos) || 0
+    );
   };
 
   /*
@@ -2910,7 +2950,7 @@ function ProfessorAssistente({
 
     // Se outra refeição do mesmo dia já foi avaliada,
     // reaproveita automaticamente o total de alunos informado.
-    setAlunos(obterTotalAlunosDoDiaEGrupo(registro.data, registro.grupo));
+    setAlunos(obterTotalAlunosDaAvaliacaoAnterior(registro));
     setGostaram(0);
     setFotoAvaliacao(null);
     setErroAvaliacao("");
