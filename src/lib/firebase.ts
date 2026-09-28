@@ -205,15 +205,32 @@ class DeleteBuilder {
       const snapshot = await getDocs(collection(db, this.collectionName));
       const docsToDelete = snapshot.docs.filter((item) => {
         const data = item.data();
+        const documentId = String(item.id);
+        const storedId = data.id == null ? "" : String(data.id);
         const matchesIds =
-          !this.ids || this.ids.some((id) => String(data.id ?? item.id) === String(id));
+          !this.ids ||
+          this.ids.some((id) => {
+            const targetId = String(id);
+            return targetId === documentId || targetId === storedId;
+          });
         const matchesFilters = this.filters.every(
-          ({ field, value }) => data[field] === value
+          ({ field, value }) => String(data[field] ?? "") === String(value ?? "")
         );
         return matchesIds && matchesFilters;
       });
 
       await Promise.all(docsToDelete.map((item) => deleteDoc(item.ref)));
+
+      if (this.ids && docsToDelete.length === 0) {
+        return {
+          data: null,
+          error: {
+            code: "firebase/not-found",
+            message: "Nenhum registro correspondente foi encontrado para exclusão.",
+          },
+        };
+      }
+
       return { data: docsToDelete.map((item) => item.id), error: null };
     } catch (error) {
       return { data: null, error: formatFirebaseError(error) };
