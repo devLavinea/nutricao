@@ -2151,6 +2151,26 @@ function Cozinha({
       return;
     }
 
+    // Depois que o registro da cozinha foi excluído com sucesso,
+    // exclui também todas as avaliações vinculadas a ele.
+    const idsParaExcluirAvaliacoes = ids.map((id) => Number(id));
+    let erroAvaliacoes: any = null;
+
+    for (const registroId of idsParaExcluirAvaliacoes) {
+      const resultadoAvaliacao = await firebaseDb
+        .from("avaliacao_alimentacao")
+        .delete()
+        .eq("registro_id", registroId);
+
+      if (resultadoAvaliacao.error) {
+        console.error(
+          `ERRO AO EXCLUIR AVALIAÇÃO DO REGISTRO ${registroId}:`,
+          resultadoAvaliacao.error
+        );
+        erroAvaliacoes = resultadoAvaliacao.error;
+      }
+    }
+
     // Só remove da tela depois que o Firestore confirmou a exclusão.
     setRegistros((anterior) =>
       anterior.filter((item) => {
@@ -2164,11 +2184,20 @@ function Cozinha({
       })
     );
 
-    alert(
-      excluidos.length === 1
-        ? "Registro excluído do banco de dados com sucesso."
-        : `${excluidos.length} registros excluídos do banco de dados com sucesso.`
-    );
+    if (erroAvaliacoes) {
+      alert(
+        `O registro da cozinha foi excluído, mas houve um problema ao excluir uma avaliação vinculada.\n\n${
+          erroAvaliacoes.message ||
+          "Verifique as permissões do Firebase."
+        }`
+      );
+    } else {
+      alert(
+        excluidos.length === 1
+          ? "Registro e avaliações vinculadas excluídos com sucesso."
+          : `${excluidos.length} registros e suas avaliações vinculadas foram excluídos com sucesso.`
+      );
+    }
   }
 
   function handleFoto(
@@ -2724,25 +2753,20 @@ function ProfessorAssistente({
    * Não verifica preparação realizada
    * no mês.
    */
-  const jaAvaliado = (
+  const obterAvaliacaoDoRegistro = (
     registro: RegistroCozinha
-  ) => {
-    return avaliacoes.some(
-      (avaliacao) => {
+  ): Avaliacao | null => {
+    return (
+      avaliacoes.find((avaliacao) => {
         /*
          * Regra principal:
          * a avaliação pertence exatamente
          * ao registro da cozinha.
          */
-        if (
-          Number(
-            avaliacao.registroId
-          ) > 0
-        ) {
+        if (Number(avaliacao.registroId) > 0) {
           return (
-            Number(
-              avaliacao.registroId
-            ) === Number(registro.id)
+            Number(avaliacao.registroId) ===
+            Number(registro.id)
           );
         }
 
@@ -2751,34 +2775,103 @@ function ProfessorAssistente({
          * antigas sem registro_id.
          */
         return (
-          normalizarData(
-            avaliacao.data
-          ) ===
-            normalizarData(
-              registro.data
-            ) &&
-          normalizarTexto(
-            avaliacao.grupo
-          ) ===
-            normalizarTexto(
-              registro.grupo
-            ) &&
-          normalizarTexto(
-            avaliacao.refeicao
-          ) ===
-            normalizarTexto(
-              registro.refeicao
-            ) &&
-          normalizarTexto(
-            avaliacao.preparacao
-          ) ===
-            normalizarTexto(
-              registro.servida
-            )
+          normalizarData(avaliacao.data) ===
+            normalizarData(registro.data) &&
+          normalizarTexto(avaliacao.grupo) ===
+            normalizarTexto(registro.grupo) &&
+          normalizarTexto(avaliacao.refeicao) ===
+            normalizarTexto(registro.refeicao) &&
+          normalizarTexto(avaliacao.preparacao) ===
+            normalizarTexto(registro.servida)
         );
-      }
+      }) ?? null
     );
   };
+
+  const jaAvaliado = (
+    registro: RegistroCozinha
+  ) => Boolean(obterAvaliacaoDoRegistro(registro));
+
+  async function excluirAvaliacao(
+    avaliacao: Avaliacao
+  ) {
+    const nomeLogado = String(
+      funcionarioLogado?.nome ?? ""
+    ).trim();
+
+    const nomeAvaliador = String(
+      avaliacao.nomeResponsavel ?? ""
+    ).trim();
+
+    /*
+     * Somente quem fez a avaliação pode excluí-la.
+     */
+    if (
+      !nomeLogado ||
+      normalizarTexto(nomeLogado) !==
+        normalizarTexto(nomeAvaliador)
+    ) {
+      alert(
+        "Você só pode excluir uma avaliação feita pelo seu próprio usuário."
+      );
+      return;
+    }
+
+    if (!Number(avaliacao.id)) {
+      alert(
+        "Não foi possível identificar a avaliação para exclusão."
+      );
+      return;
+    }
+
+    const confirmou = window.confirm(
+      `Excluir a avaliação feita por ${avaliacao.nomeResponsavel}?\n\nEssa ação não pode ser desfeita.`
+    );
+
+    if (!confirmou) return;
+
+    const { data: excluida, error } = await firebaseDb
+      .from("avaliacao_alimentacao")
+      .delete()
+      .eq("id", Number(avaliacao.id));
+
+    if (error) {
+      console.error(
+        "ERRO AO EXCLUIR AVALIAÇÃO:",
+        error
+      );
+      alert(
+        `Não foi possível excluir a avaliação.\n\n${
+          error.message ||
+          "Verifique as permissões do Firebase."
+        }`
+      );
+      return;
+    }
+
+    if (!excluida || excluida.length === 0) {
+      alert(
+        "O Firebase não encontrou a avaliação correspondente para excluir."
+      );
+      return;
+    }
+
+    setAvaliacoes((anterior) =>
+      anterior.filter(
+        (item) =>
+          Number(item.id) !== Number(avaliacao.id)
+      )
+    );
+
+    if (
+      Number(registroSelecionadoId) ===
+      Number(avaliacao.registroId)
+    ) {
+      setRegistroSelecionadoId(null);
+    }
+
+    alert("Avaliação excluída com sucesso.");
+  }
 
   function selecionarRegistro(
     registro: RegistroCozinha
@@ -3130,7 +3223,23 @@ function ProfessorAssistente({
 
     {registrosVisiveis.map((registro) => {
 
-      const avaliado = jaAvaliado(registro);
+      const avaliacaoDoRegistro =
+        obterAvaliacaoDoRegistro(registro);
+
+      const avaliado = Boolean(
+        avaliacaoDoRegistro
+      );
+
+      const avaliacaoFoiFeitaPeloUsuarioLogado =
+        Boolean(
+          avaliacaoDoRegistro &&
+          normalizarTexto(
+            avaliacaoDoRegistro.nomeResponsavel
+          ) ===
+            normalizarTexto(
+              funcionarioLogado?.nome ?? ""
+            )
+        );
 
       return (
         <tr
@@ -3141,9 +3250,26 @@ function ProfessorAssistente({
           {/* AÇÃO */}
           <td className="p-3">
             {avaliado ? (
-              <span className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-500">
-                ✓ Já avaliada
-              </span>
+              <div className="flex flex-col items-start gap-2">
+                <span className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-500">
+                  ✓ Já avaliada
+                </span>
+
+                {avaliacaoFoiFeitaPeloUsuarioLogado &&
+                  avaliacaoDoRegistro && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        excluirAvaliacao(
+                          avaliacaoDoRegistro
+                        )
+                      }
+                      className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-100"
+                    >
+                      🗑️ Excluir avaliação
+                    </button>
+                  )}
+              </div>
             ) : (
               <button
                 type="button"
