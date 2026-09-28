@@ -2,6 +2,7 @@ import { initializeApp } from "firebase/app";
 import {
   addDoc,
   collection,
+  deleteDoc,
   getDocs,
   getFirestore,
   orderBy,
@@ -81,7 +82,7 @@ async function executeSelect(state: QueryState) {
 
   let rows: Record<string, any>[] = snapshot.docs.map((item) => {
     const data = item.data();
-    return { id: data.id ?? item.id, ...data };
+    return { id: data.id ?? item.id, ...data, _firestoreId: item.id };
   });
 
   if (state.orders.length > 1) {
@@ -141,16 +142,16 @@ class SelectBuilder {
 }
 
 class InsertBuilder {
-private readonly collectionName: string;
-private readonly payload: Record<string, any> | Record<string, any>[];
+  private readonly collectionName: string;
+  private readonly payload: Record<string, any> | Record<string, any>[];
 
-constructor(
-  collectionName: string,
-  payload: Record<string, any> | Record<string, any>[]
-) {
-  this.collectionName = collectionName;
-  this.payload = payload;
-}
+  constructor(
+    collectionName: string,
+    payload: Record<string, any> | Record<string, any>[]
+  ) {
+    this.collectionName = collectionName;
+    this.payload = payload;
+  }
 
   async select(_fields?: string) {
     try {
@@ -177,12 +178,63 @@ constructor(
   }
 }
 
+class DeleteBuilder {
+  private readonly collectionName: string;
+  private ids: any[] | null = null;
+  private filters: { field: string; value: any }[] = [];
+
+  constructor(collectionName: string) {
+    this.collectionName = collectionName;
+  }
+
+  in(field: string, values: any[]): this {
+    if (field !== "id") {
+      throw new Error(`Exclusão em lote não suportada para o campo "${field}".`);
+    }
+    this.ids = values;
+    return this;
+  }
+
+  eq(field: string, value: any): this {
+    this.filters.push({ field, value });
+    return this;
+  }
+
+  async execute() {
+    try {
+      const snapshot = await getDocs(collection(db, this.collectionName));
+      const docsToDelete = snapshot.docs.filter((item) => {
+        const data = item.data();
+        const matchesIds =
+          !this.ids || this.ids.some((id) => String(data.id ?? item.id) === String(id));
+        const matchesFilters = this.filters.every(
+          ({ field, value }) => data[field] === value
+        );
+        return matchesIds && matchesFilters;
+      });
+
+      await Promise.all(docsToDelete.map((item) => deleteDoc(item.ref)));
+      return { data: docsToDelete.map((item) => item.id), error: null };
+    } catch (error) {
+      return { data: null, error: formatFirebaseError(error) };
+    }
+  }
+
+  then<TResult1 = { data: string[] | null; error: any }, TResult2 = never>(
+    onfulfilled?: ((value: { data: string[] | null; error: any }) => TResult1 | PromiseLike<TResult1>) | null,
+    onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null
+  ): Promise<TResult1 | TResult2> {
+    return this.execute().then(onfulfilled as any, onrejected as any);
+  }
+}
+
 class FirebaseDatabaseAdapter {
   from(collectionName: string) {
     return {
       select: (fields?: string) => new SelectBuilder(collectionName, fields),
       insert: (payload: Record<string, any> | Record<string, any>[]) =>
         new InsertBuilder(collectionName, payload),
+      delete: () => new DeleteBuilder(collectionName),
     };
   }
 }
