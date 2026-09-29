@@ -4302,14 +4302,16 @@ const exportarRegistros = async () => {
      * alinhado aproximadamente ao centro da tabela.
      */
 
+    // Logo da Prefeitura posicionada dentro da área superior da planilha.
+    // Mantém a proporção original do arquivo para não deformar a imagem.
     worksheet.addImage(imageId, {
       tl: {
         col: 3.98,
-        row: 0.40,
+        row: 0.34,
       },
       ext: {
         width: 300,
-        height: 50,
+        height: 48,
       },
     });
   } catch (erro) {
@@ -4403,8 +4405,13 @@ const exportarRegistros = async () => {
       naoGostaram,
     ]);
 
-    // Altura das linhas dos dados
-    row.height = 42;
+    // Altura das linhas dos dados:
+    // aumenta automaticamente quando a preparação possui quebras de linha.
+    // Ex.: 3 quebras = 4 linhas de texto, evitando que a impressão corte o conteúdo.
+    const preparacaoTexto = String(avaliacao.preparacao || "");
+    const linhasExplícitas = preparacaoTexto.split(/\\r?\\n/).length;
+    const linhasPorQuebra = Math.max(1, linhasExplícitas);
+    row.height = Math.min(110, Math.max(42, 22 + linhasPorQuebra * 20));
 
     row.eachCell((cell) => {
       cell.font = {
