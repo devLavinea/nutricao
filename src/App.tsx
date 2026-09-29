@@ -15,10 +15,11 @@ import type {
 } from "react";
 
 import { firebaseDb } from "./lib/firebase";
+import prefeituraLogo from "./assets/prefeitura.png";
+import rodapeSecretaria from "./assets/rodape-secretaria.jpg";
 
 
 const imagemPlanilha = "/Imagem-planilha.png";
-const prefeituraLogo = "/prefeitura.png";
 // A identidade visual do aplicativo/PWA é a logo principal do sistema.
 const logoAplicativo = "/icon-512.png";
 
@@ -4234,9 +4235,12 @@ const exportarRegistros = async () => {
   // ÁREA DO LOGO + TÍTULO
   // =========================================================
 
-  worksheet.mergeCells("A1:G2");
+  // Reserva um espaço próprio para a logo e outro para o título.
+  // Assim a imagem não fica sobreposta ao texto no Excel/impressão.
+  worksheet.mergeCells("A1:B2");
+  worksheet.mergeCells("C1:G2");
 
-  const areaTitulo = worksheet.getCell("A1");
+  const areaTitulo = worksheet.getCell("C1");
 
   areaTitulo.value = "REGISTROS DE ACEITABILIDADE";
 
@@ -4268,57 +4272,38 @@ const exportarRegistros = async () => {
   // LOGO DA PREFEITURA
   // =========================================================
 
-  try {
-    const resposta = await fetch(prefeituraLogo);
-
+  const carregarImagemComoBase64 = async (src: string) => {
+    const resposta = await fetch(src);
     if (!resposta.ok) {
-      throw new Error(
-        `Erro ao carregar prefeitura.png: ${resposta.status}`
-      );
+      throw new Error(`Não foi possível carregar a imagem (${resposta.status}).`);
     }
 
-    const blobLogo = await resposta.blob();
-
-    const base64 = await new Promise<string>((resolve, reject) => {
+    const blob = await resposta.blob();
+    return await new Promise<string>((resolve, reject) => {
       const leitor = new FileReader();
-
-      leitor.onload = () => {
-        resolve(String(leitor.result));
+      leitor.onloadend = () => {
+        const resultado = leitor.result;
+        if (typeof resultado === "string") resolve(resultado);
+        else reject(new Error("Falha ao converter a imagem para Base64."));
       };
-
-      leitor.onerror = reject;
-
-      leitor.readAsDataURL(blobLogo);
+      leitor.onerror = () => reject(new Error("Falha ao ler a imagem."));
+      leitor.readAsDataURL(blob);
     });
+  };
 
+  try {
+    const base64Logo = await carregarImagemComoBase64(prefeituraLogo);
     const imageId = workbook.addImage({
-      base64,
+      base64: base64Logo,
       extension: "png",
     });
 
-    /*
-     * A área A:G possui larguras diferentes.
-     * A posição abaixo deixa o centro da imagem
-     * alinhado aproximadamente ao centro da tabela.
-     */
-
-    // Logo da Prefeitura posicionada dentro da área superior da planilha.
-    // Mantém a proporção original do arquivo para não deformar a imagem.
     worksheet.addImage(imageId, {
-      tl: {
-        col: 3.98,
-        row: 0.34,
-      },
-      ext: {
-        width: 300,
-        height: 48,
-      },
+      tl: { col: 0.08, row: 0.20 },
+      ext: { width: 255, height: 41 },
     });
   } catch (erro) {
-    console.warn(
-      "Não foi possível adicionar prefeitura.png:",
-      erro
-    );
+    console.error("Não foi possível adicionar a logo da Prefeitura à planilha:", erro);
   }
 
   // =========================================================
@@ -4405,13 +4390,34 @@ const exportarRegistros = async () => {
       naoGostaram,
     ]);
 
-    // Altura das linhas dos dados:
-    // aumenta automaticamente quando a preparação possui quebras de linha.
-    // Ex.: 3 quebras = 4 linhas de texto, evitando que a impressão corte o conteúdo.
-    const preparacaoTexto = String(avaliacao.preparacao || "");
-    const linhasExplícitas = preparacaoTexto.split(/\\r?\\n/).length;
-    const linhasPorQuebra = Math.max(1, linhasExplícitas);
-    row.height = Math.min(110, Math.max(42, 22 + linhasPorQuebra * 20));
+    // ExcelJS não calcula automaticamente a altura para wrapText.
+    // Calculamos a altura considerando tanto quebras de linha explícitas
+    // quanto o tamanho do texto que pode quebrar pela largura da coluna.
+    const valoresLinha = [
+      "CNI MARIA ANTONIA",
+      avaliacao.grupo || "",
+      "INTEGRAL",
+      formatarDataBR(avaliacao.data),
+      avaliacao.preparacao || "",
+      String(gostaram),
+      String(naoGostaram),
+    ];
+
+    const largurasColunas = [28, 24, 14, 18, 42, 28, 32];
+    const linhasVisuais = valoresLinha.reduce((maior, valor, indice) => {
+      const texto = String(valor ?? "");
+      const quebras = texto.split(/\r?\n/);
+      const linhasCalculadas = quebras.reduce((total, trecho) => {
+        // Estimativa conservadora para o wrap do Excel.
+        const caracteresPorLinha = Math.max(10, Math.floor(largurasColunas[indice] * 0.95));
+        return total + Math.max(1, Math.ceil(trecho.length / caracteresPorLinha));
+      }, 0);
+
+      return Math.max(maior, linhasCalculadas);
+    }, 1);
+
+    // Uma linha simples continua compacta; cada linha adicional ganha espaço.
+    row.height = Math.min(120, Math.max(42, 20 + linhasVisuais * 20));
 
     row.eachCell((cell) => {
       cell.font = {
@@ -4428,6 +4434,36 @@ const exportarRegistros = async () => {
       cell.border = borda;
     });
   });
+
+  // =========================================================
+  // RODAPÉ INSTITUCIONAL
+  // =========================================================
+
+  // A imagem enviada pela usuária é colocada no final da planilha,
+  // reproduzindo o cabeçalho institucional da Secretaria.
+  const primeiraLinhaRodape = Math.max(4, worksheet.rowCount + 2);
+  const ultimaLinhaRodape = primeiraLinhaRodape + 2;
+
+  worksheet.mergeCells(`A${primeiraLinhaRodape}:G${ultimaLinhaRodape}`);
+  for (let linha = primeiraLinhaRodape; linha <= ultimaLinhaRodape; linha++) {
+    worksheet.getRow(linha).height = 42;
+  }
+
+  try {
+    const base64Rodape = await carregarImagemComoBase64(rodapeSecretaria);
+    const rodapeId = workbook.addImage({
+      base64: base64Rodape,
+      extension: "jpeg",
+    });
+
+    // Proporção original: 1600x344.
+    worksheet.addImage(rodapeId, {
+      tl: { col: 0.20, row: primeiraLinhaRodape - 1 + 0.15 },
+      ext: { width: 940, height: 202 },
+    });
+  } catch (erro) {
+    console.error("Não foi possível adicionar o rodapé institucional:", erro);
+  }
 
   // =========================================================
   // CONFIGURAÇÃO DA PLANILHA
@@ -4450,6 +4486,7 @@ const exportarRegistros = async () => {
   worksheet.pageSetup.fitToPage = true;
   worksheet.pageSetup.fitToWidth = 1;
   worksheet.pageSetup.fitToHeight = 0;
+  worksheet.pageSetup.printArea = `A1:G${ultimaLinhaRodape}`;
 
   // Margens
   worksheet.pageSetup.margins = {
