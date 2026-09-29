@@ -16,7 +16,7 @@ import type {
 
 import { firebaseDb } from "./lib/firebase";
 import prefeituraLogo from "./assets/prefeitura.png";
-import rodapeSecretaria from "./assets/rodape-secretaria.jpg";
+import rodapeSecretaria from "./assets/rodape-secretaria.png";
 
 
 const imagemPlanilha = "/Imagem-planilha.png";
