@@ -4100,7 +4100,11 @@ const exportarPlanilha = async () => {
 
     for (let coluna = 1; coluna <= 6; coluna++) {
       const cell = worksheet.getCell(numeroLinha, coluna);
-      cell.font = { name: "Arial", size: 12 };
+      cell.font = {
+        name: "Arial",
+        size: 12,
+        bold: coluna === 4 || coluna === 5 || coluna === 6,
+      };
       cell.alignment = {
         horizontal: coluna === 1 ? "left" : "center",
         vertical: "middle",
