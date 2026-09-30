@@ -244,115 +244,136 @@ function escaparXml(valor: unknown): string {
     .replace(/'/g, "&apos;");
 }
 
-function extrairBlocosDeFormulario(xml: string): { cabecalho: string; bloco1: string; bloco2: string } {
-  const bodyMatch = xml.match(/<w:body>([\s\S]*?)<w:sectPr[\s\S]*?<\/w:sectPr>\s*<\/w:body>/);
+function obterBlocoPrincipalDoFormulario(xml: string): { cabecalho: string; bloco: string; sectPr: string } {
+  const bodyMatch = xml.match(/<w:body>([\s\S]*?)<w:sectPr>[\s\S]*?<\/w:sectPr>[\s\S]*?<\/w:body>/);
   if (!bodyMatch) throw new Error("O modelo do formulário não possui um corpo válido.");
 
-  const body = bodyMatch[1];
-  const marcadores: number[] = [];
-  const marcador = /Formulário a ser preenchido pelo professor da turma/g;
-  let encontrado: RegExpExecArray | null;
-  while ((encontrado = marcador.exec(body))) marcadores.push(encontrado.index);
-  if (marcadores.length < 2) {
-    throw new Error("O modelo precisa conter dois formulários na mesma página.");
+  const corpo = bodyMatch[1];
+  const sectPrMatch = xml.match(/<w:sectPr>[\s\S]*?<\/w:sectPr>/);
+  if (!sectPrMatch) throw new Error("Não foi possível localizar a configuração de página do modelo.");
+
+  const inicio = corpo.indexOf("<w:p");
+  if (inicio < 0) throw new Error("Não foi possível localizar o formulário no modelo.");
+
+  // O primeiro <w:p> é o bloco completo do formulário oficial. O restante do
+  // documento é a folha em branco do arquivo enviado e é deliberadamente ignorado.
+  let profundidade = 0;
+  let pos = inicio;
+  while (pos < corpo.length) {
+    const abre = corpo.indexOf("<w:p", pos);
+    const fecha = corpo.indexOf("</w:p>", pos);
+    if (abre >= 0 && abre < fecha) {
+      profundidade += 1;
+      pos = abre + 4;
+    } else if (fecha >= 0) {
+      profundidade -= 1;
+      pos = fecha + 6;
+      if (profundidade === 0) break;
+    } else {
+      break;
+    }
   }
 
-  function inicioParagrafo(posicao: number): number {
-    const antes = body.slice(0, posicao);
-    const indice = antes.lastIndexOf("<w:p");
-    return indice >= 0 ? indice : posicao;
-  }
+  if (profundidade !== 0) throw new Error("Não foi possível identificar o bloco completo do formulário.");
 
-  const inicio1 = inicioParagrafo(marcadores[0]);
-  const inicio2 = inicioParagrafo(marcadores[1]);
-  return {
-    cabecalho: body.slice(0, inicio1),
-    bloco1: body.slice(inicio1, inicio2),
-    bloco2: body.slice(inicio2),
-  };
+  return { cabecalho: corpo.slice(0, inicio), bloco: corpo.slice(inicio, pos), sectPr: sectPrMatch[0] };
 }
 
-function preencherBlocoFormulario(
-  bloco: string,
-  avaliacao: Avaliacao,
-  professor: string,
-  grupo: string
-): string {
+function inserirDepoisDoParagrafo(xml: string, textoDoParagrafo: string, conteudo: string): string {
+  const indiceTexto = xml.indexOf(textoDoParagrafo);
+  if (indiceTexto < 0) return xml;
+  const inicioParagrafo = xml.lastIndexOf("<w:p", indiceTexto);
+  const fimParagrafo = xml.indexOf("</w:p>", indiceTexto);
+  if (inicioParagrafo < 0 || fimParagrafo < 0) return xml;
+  const fim = fimParagrafo + "</w:p>".length;
+  return xml.slice(0, fim) + conteudo + xml.slice(fim);
+}
+
+function preencherBlocoFormulario(bloco: string, avaliacao: Avaliacao, professor: string, grupo: string): string {
   const unidade = "CNI MARIA ANTONIA";
   const data = formatarDataBR(avaliacao.data);
   const preparacao = avaliacao.preparacao || "";
   const gostaram = Math.max(0, Number(avaliacao.gostaram) || 0);
   const naoGostaram = Math.max(0, Number(avaliacao.naoGostaram) || 0);
+  const turno = normalizarTexto((avaliacao as any).turno);
+  const marca = (nome: string) => normalizarTexto(turno) === normalizarTexto(nome) ? "X" : " ";
 
   let resultado = bloco;
   const substituicoes: Array<[string, string]> = [
     ["Unidade escolar: _________________________________________________", `Unidade escolar: ${escaparXml(unidade)}`],
     ["Turma ou grupo:  _______________", `Turma ou grupo: ${escaparXml(grupo)}`],
     ["Turma ou grupo: _______________", `Turma ou grupo: ${escaparXml(grupo)}`],
-    ["Turno: Manhã (  ) Tarde (  ) Integral (  )", `Turno: Manhã (   ) Tarde (   ) Integral ( X )`],
+    ["Turno: Manhã (  ) Tarde (  ) Integral (  )", `Turno: Manhã ( ${marca("manhã")} ) Tarde ( ${marca("tarde")} ) Integral ( ${marca("integral")} )`],
     ["Data do teste: ____/____/____", `Data do teste: ${escaparXml(data)}`],
     ["Nome da preparação ______________________________________________", `Nome da preparação ${escaparXml(preparacao)}`],
     ["Numero de alunos que aprovaram a preparação: ________________________", `Numero de alunos que aprovaram a preparação: ${gostaram}`],
     ["Numero de alunos que não gostaram da preparação: _____________________", `Numero de alunos que não gostaram da preparação: ${naoGostaram}`],
-    ["Professor(a) responsável pela sala: ______________________________________________", `Professor(a) responsável pela sala: ${escaparXml(professor)}`],
-    ["Assinatura do(a) professor(a): _________________________________________________", "Assinatura do(a) professor(a): _________________________________________________"],
   ];
+  for (const [origem, destino] of substituicoes) resultado = resultado.split(origem).join(destino);
 
-  for (const [origem, destino] of substituicoes) {
-    resultado = resultado.split(origem).join(destino);
+  const camposProfessor =
+    `<w:p><w:pPr><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="30"/><w:szCs w:val="30"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="30"/><w:szCs w:val="30"/></w:rPr><w:t>Professor(a) responsável pela sala: ${escaparXml(professor)}</w:t></w:r></w:p>` +
+    `<w:p><w:pPr><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="30"/><w:szCs w:val="30"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="30"/><w:szCs w:val="30"/></w:rPr><w:t>Assinatura do(a) professor(a): _________________________________________________</w:t></w:r></w:p>`;
+
+  // O modelo correto não traz professor/assinatura. Inserimos em cada ramo
+  // (Choice/Fallback) imediatamente antes do parágrafo IMPORTANTE.
+  const marcadorImportante = "IMPORTANTE:";
+  let cursor = 0;
+  while (true) {
+    const indice = resultado.indexOf(marcadorImportante, cursor);
+    if (indice < 0) break;
+    const inicioParagrafo = resultado.lastIndexOf("<w:p", indice);
+    if (inicioParagrafo >= 0) {
+      resultado = resultado.slice(0, inicioParagrafo) + camposProfessor + resultado.slice(inicioParagrafo);
+      cursor = inicioParagrafo + camposProfessor.length + marcadorImportante.length;
+    } else break;
   }
-
-  // Caso o novo modelo ainda não tenha os campos de professor/assinatura,
-  // eles são inseridos logo antes do bloco IMPORTANTE.
-  if (!resultado.includes("Professor(a) responsável pela sala:")) {
-    const importante = resultado.indexOf("IMPORTANTE:");
-    if (importante >= 0) {
-      const inicioImportante = resultado.lastIndexOf("<w:p", importante);
-      const campos =
-        `<w:p><w:r><w:t>Professor(a) responsável pela sala: ${escaparXml(professor)}</w:t></w:r></w:p>` +
-        `<w:p><w:r><w:t>Assinatura do(a) professor(a): _________________________________________________</w:t></w:r></w:p>`;
-      resultado = resultado.slice(0, inicioImportante) + campos + resultado.slice(inicioImportante);
-    }
-  }
-
   return resultado;
 }
 
-async function gerarFormulariosWord(
-  avaliacoes: Avaliacao[],
-  professor: string,
-  grupo: string
-): Promise<void> {
-  if (avaliacoes.length === 0) return;
+function ajustarBlocoParaA4(bloco: string, deslocamentoVertical: number): string {
+  const escala = 0.82;
+  const largura = Math.round(8451850 * escala);
+  const altura = Math.round(4869180 * escala);
+  let ajustado = bloco;
+  ajustado = ajustado.replace(/<wp:extent cx="\d+" cy="\d+"\/>/, `<wp:extent cx="${largura}" cy="${altura}"/>`);
+  ajustado = ajustado.replace(/<a:ext cx="\d+" cy="\d+"\/>/, `<a:ext cx="${largura}" cy="${altura}"/>`);
+  ajustado = ajustado.replace(/<wp:positionH relativeFrom="[^"]+"><wp:posOffset>\d+<\/wp:posOffset><\/wp:positionH>/, `<wp:positionH relativeFrom="page"><wp:posOffset>350000</wp:posOffset></wp:positionH>`);
+  ajustado = ajustado.replace(/<wp:positionV relativeFrom="[^"]+"><wp:posOffset>\d+<\/wp:posOffset><\/wp:positionV>/, `<wp:positionV relativeFrom="page"><wp:posOffset>${deslocamentoVertical}</wp:posOffset></wp:positionV>`);
+  // Reduz apenas a tipografia do formulário para que dois formulários completos
+  // caibam em uma folha A4, sem retirar conteúdo do modelo.
+  ajustado = ajustado.replace(/<w:sz w:val="36"\/>/g, '<w:sz w:val="30"/>').replace(/<w:szCs w:val="36"\/>/g, '<w:szCs w:val="30"/>');
+  return ajustado;
+}
 
+async function gerarFormulariosWord(avaliacoes: Avaliacao[], professor: string, grupo: string): Promise<void> {
+  if (avaliacoes.length === 0) return;
   try {
     const resposta = await fetch("/formulario-aceitabilidade.docx");
     if (!resposta.ok) throw new Error("Não foi possível carregar o modelo do formulário.");
-
     const arquivoModelo = await resposta.arrayBuffer();
     const zip = await JSZip.loadAsync(arquivoModelo);
     const caminhoDocumento = "word/document.xml";
     const xmlOriginal = await zip.file(caminhoDocumento)?.async("string");
     if (!xmlOriginal) throw new Error("O modelo do formulário não possui um documento Word válido.");
 
-    const { cabecalho, bloco1, bloco2 } = extrairBlocosDeFormulario(xmlOriginal);
-    const sectPrMatch = xmlOriginal.match(/<w:sectPr[\s\S]*?<\/w:sectPr>/);
-    if (!sectPrMatch) throw new Error("Não foi possível localizar a configuração de página do modelo.");
-    const sectPr = sectPrMatch[0];
+    const { cabecalho, bloco, sectPr } = obterBlocoPrincipalDoFormulario(xmlOriginal);
+    const sectPrA4 = sectPr
+      .replace(/<w:pgSz[^>]*\/>/, '<w:pgSz w:w="11906" w:h="16838"/>')
+      .replace(/<w:pgMar[^>]*\/>/, '<w:pgMar w:top="400" w:right="450" w:bottom="400" w:left="450" w:header="300" w:footer="300" w:gutter="0"/>');
 
     const paginas: string[] = [];
     for (let i = 0; i < avaliacoes.length; i += 2) {
-      const primeiro = preencherBlocoFormulario(bloco1, avaliacoes[i], professor, grupo);
+      const primeiro = ajustarBlocoParaA4(preencherBlocoFormulario(bloco, avaliacoes[i], professor, grupo), 350000);
       const segundo = avaliacoes[i + 1]
-        ? preencherBlocoFormulario(bloco2, avaliacoes[i + 1], professor, grupo)
+        ? ajustarBlocoParaA4(preencherBlocoFormulario(bloco, avaliacoes[i + 1], professor, grupo), 5100000)
         : "";
       paginas.push(primeiro + segundo);
     }
 
     const quebraPagina = `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`;
-    const bodyFinal = `${cabecalho}${paginas.join(quebraPagina)}<w:sectPr>${sectPr.replace(/^<w:sectPr>|<\/w:sectPr>$/g, "")}</w:sectPr>`;
-    const xmlFinal = xmlOriginal.replace(/<w:body>[\s\S]*?<w:sectPr[\s\S]*?<\/w:sectPr>\s*<\/w:body>/, `<w:body>${bodyFinal}</w:body>`);
-
+    const bodyFinal = `${cabecalho}${paginas.join(quebraPagina)}${sectPrA4}`;
+    const xmlFinal = xmlOriginal.replace(/<w:body>[\s\S]*?<w:sectPr>[\s\S]*?<\/w:sectPr>[\s\S]*?<\/w:body>/, `<w:body>${bodyFinal}</w:body>`);
     zip.file(caminhoDocumento, xmlFinal);
 
     const resultado = await zip.generateAsync({ type: "blob" });
