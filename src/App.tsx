@@ -244,121 +244,124 @@ function escaparXml(valor: unknown): string {
     .replace(/'/g, "&apos;");
 }
 
-function substituirDadosFormulario(xml: string, avaliacao: Avaliacao): string {
+function extrairBlocosDeFormulario(xml: string): { cabecalho: string; bloco1: string; bloco2: string } {
+  const bodyMatch = xml.match(/<w:body>([\s\S]*?)<w:sectPr[\s\S]*?<\/w:sectPr>\s*<\/w:body>/);
+  if (!bodyMatch) throw new Error("O modelo do formulário não possui um corpo válido.");
+
+  const body = bodyMatch[1];
+  const marcadores: number[] = [];
+  const marcador = /Formulário a ser preenchido pelo professor da turma/g;
+  let encontrado: RegExpExecArray | null;
+  while ((encontrado = marcador.exec(body))) marcadores.push(encontrado.index);
+  if (marcadores.length < 2) {
+    throw new Error("O modelo precisa conter dois formulários na mesma página.");
+  }
+
+  function inicioParagrafo(posicao: number): number {
+    const antes = body.slice(0, posicao);
+    const indice = antes.lastIndexOf("<w:p");
+    return indice >= 0 ? indice : posicao;
+  }
+
+  const inicio1 = inicioParagrafo(marcadores[0]);
+  const inicio2 = inicioParagrafo(marcadores[1]);
+  return {
+    cabecalho: body.slice(0, inicio1),
+    bloco1: body.slice(inicio1, inicio2),
+    bloco2: body.slice(inicio2),
+  };
+}
+
+function preencherBlocoFormulario(
+  bloco: string,
+  avaliacao: Avaliacao,
+  professor: string,
+  grupo: string
+): string {
   const unidade = "CNI MARIA ANTONIA";
-  const grupo = avaliacao.grupo || "";
   const data = formatarDataBR(avaliacao.data);
   const preparacao = avaliacao.preparacao || "";
   const gostaram = Math.max(0, Number(avaliacao.gostaram) || 0);
   const naoGostaram = Math.max(0, Number(avaliacao.naoGostaram) || 0);
 
-  const turno = "integral";
-  const marcaTurno = (nome: string) =>
-    turno === normalizarTexto(nome) ? "X" : " ";
-
+  let resultado = bloco;
   const substituicoes: Array<[string, string]> = [
-    [
-      "Unidade escolar: _________________________________________________",
-      `Unidade escolar: ${escaparXml(unidade)}`,
-    ],
-    [
-      "Turma ou grupo:  _______________",
-      `Turma ou grupo: ${escaparXml(grupo)}`,
-    ],
-    [
-      "Turma ou grupo: _______________",
-      `Turma ou grupo: ${escaparXml(grupo)}`,
-    ],
-    [
-      "Turno: Manhã (  ) Tarde (  ) Integral (  )",
-      `Turno: Manhã ( ${marcaTurno("Manhã")} ) Tarde ( ${marcaTurno("Tarde")} ) Integral ( ${marcaTurno("Integral")} )`,
-    ],
-    [
-      "Turno: Manhã ( ) Tarde ( ) Integral ( )",
-      `Turno: Manhã ( ${marcaTurno("Manhã")} ) Tarde ( ${marcaTurno("Tarde")} ) Integral ( ${marcaTurno("Integral")} )`,
-    ],
-    [
-      "Data do teste: ____/____/____",
-      `Data do teste: ${escaparXml(data)}`,
-    ],
-    [
-      "Nome da preparação ______________________________________________",
-      `Nome da preparação ${escaparXml(preparacao)}`,
-    ],
-    [
-      "Numero de alunos que aprovaram a preparação: ________________________",
-      `Numero de alunos que aprovaram a preparação: ${gostaram}`,
-    ],
-    [
-      "Numero de alunos que não gostaram da preparação: _____________________",
-      `Numero de alunos que não gostaram da preparação: ${naoGostaram}`,
-    ],
-    [
-      "Professor(a) responsável pela sala: ______________________________________________",
-      `Professor(a) responsável pela sala: ${escaparXml(avaliacao.nomeResponsavel || "")}`,
-    ],
-    [
-      "Assinatura do(a) professor(a): _________________________________________________",
-      "Assinatura do(a) professor(a): _________________________________________________",
-    ],
+    ["Unidade escolar: _________________________________________________", `Unidade escolar: ${escaparXml(unidade)}`],
+    ["Turma ou grupo:  _______________", `Turma ou grupo: ${escaparXml(grupo)}`],
+    ["Turma ou grupo: _______________", `Turma ou grupo: ${escaparXml(grupo)}`],
+    ["Turno: Manhã (  ) Tarde (  ) Integral (  )", `Turno: Manhã (   ) Tarde (   ) Integral ( X )`],
+    ["Data do teste: ____/____/____", `Data do teste: ${escaparXml(data)}`],
+    ["Nome da preparação ______________________________________________", `Nome da preparação ${escaparXml(preparacao)}`],
+    ["Numero de alunos que aprovaram a preparação: ________________________", `Numero de alunos que aprovaram a preparação: ${gostaram}`],
+    ["Numero de alunos que não gostaram da preparação: _____________________", `Numero de alunos que não gostaram da preparação: ${naoGostaram}`],
+    ["Professor(a) responsável pela sala: ______________________________________________", `Professor(a) responsável pela sala: ${escaparXml(professor)}`],
+    ["Assinatura do(a) professor(a): _________________________________________________", "Assinatura do(a) professor(a): _________________________________________________"],
   ];
 
   for (const [origem, destino] of substituicoes) {
-    xml = xml.split(origem).join(destino);
+    resultado = resultado.split(origem).join(destino);
   }
 
-  return xml;
+  // Caso o novo modelo ainda não tenha os campos de professor/assinatura,
+  // eles são inseridos logo antes do bloco IMPORTANTE.
+  if (!resultado.includes("Professor(a) responsável pela sala:")) {
+    const importante = resultado.indexOf("IMPORTANTE:");
+    if (importante >= 0) {
+      const inicioImportante = resultado.lastIndexOf("<w:p", importante);
+      const campos =
+        `<w:p><w:r><w:t>Professor(a) responsável pela sala: ${escaparXml(professor)}</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>Assinatura do(a) professor(a): _________________________________________________</w:t></w:r></w:p>`;
+      resultado = resultado.slice(0, inicioImportante) + campos + resultado.slice(inicioImportante);
+    }
+  }
+
+  return resultado;
 }
 
-async function gerarFormulariosWordGrupo(avaliacoesGrupo: Avaliacao[], grupo: string, mes: string): Promise<void> {
-  try {
-    if (avaliacoesGrupo.length === 0) {
-      alert(`Não há avaliações do ${grupo} no mês selecionado.`);
-      return;
-    }
+async function gerarFormulariosWord(
+  avaliacoes: Avaliacao[],
+  professor: string,
+  grupo: string
+): Promise<void> {
+  if (avaliacoes.length === 0) return;
 
+  try {
     const resposta = await fetch("/formulario-aceitabilidade.docx");
     if (!resposta.ok) throw new Error("Não foi possível carregar o modelo do formulário.");
 
     const arquivoModelo = await resposta.arrayBuffer();
     const zip = await JSZip.loadAsync(arquivoModelo);
     const caminhoDocumento = "word/document.xml";
-    const modeloXml = await zip.file(caminhoDocumento)?.async("string");
-    if (!modeloXml) throw new Error("O modelo do formulário não possui um documento Word válido.");
+    const xmlOriginal = await zip.file(caminhoDocumento)?.async("string");
+    if (!xmlOriginal) throw new Error("O modelo do formulário não possui um documento Word válido.");
 
-    const inicioBody = modeloXml.indexOf("<w:body>");
-    const fimBody = modeloXml.indexOf("<w:sectPr", inicioBody);
-    if (inicioBody < 0 || fimBody < 0) throw new Error("Não foi possível preparar o modelo Word.");
+    const { cabecalho, bloco1, bloco2 } = extrairBlocosDeFormulario(xmlOriginal);
+    const sectPrMatch = xmlOriginal.match(/<w:sectPr[\s\S]*?<\/w:sectPr>/);
+    if (!sectPrMatch) throw new Error("Não foi possível localizar a configuração de página do modelo.");
+    const sectPr = sectPrMatch[0];
 
-    const conteudoModelo = modeloXml.slice(inicioBody + "<w:body>".length, fimBody);
-    const sectPr = modeloXml.slice(fimBody);
-    const formularios: string[] = [];
-
-    for (const avaliacao of avaliacoesGrupo) {
-      formularios.push(substituirDadosFormulario(conteudoModelo, avaliacao));
+    const paginas: string[] = [];
+    for (let i = 0; i < avaliacoes.length; i += 2) {
+      const primeiro = preencherBlocoFormulario(bloco1, avaliacoes[i], professor, grupo);
+      const segundo = avaliacoes[i + 1]
+        ? preencherBlocoFormulario(bloco2, avaliacoes[i + 1], professor, grupo)
+        : "";
+      paginas.push(primeiro + segundo);
     }
 
-    const quebraPagina = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
-    const conteudoFinal: string[] = [];
-    formularios.forEach((formulario, index) => {
-      conteudoFinal.push(formulario);
-      if ((index + 1) % 2 === 0 && index < formularios.length - 1) {
-        conteudoFinal.push(quebraPagina);
-      }
-    });
+    const quebraPagina = `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`;
+    const bodyFinal = `${cabecalho}${paginas.join(quebraPagina)}<w:sectPr>${sectPr.replace(/^<w:sectPr>|<\/w:sectPr>$/g, "")}</w:sectPr>`;
+    const xmlFinal = xmlOriginal.replace(/<w:body>[\s\S]*?<w:sectPr[\s\S]*?<\/w:sectPr>\s*<\/w:body>/, `<w:body>${bodyFinal}</w:body>`);
 
-    const novoXml = modeloXml.slice(0, inicioBody) +
-      "<w:body>" + conteudoFinal.join("") + sectPr +
-      modeloXml.slice(modeloXml.indexOf(">", sectPr.indexOf("<w:sectPr")) + 1).replace(/^.*?<\/w:body>/s, "");
+    zip.file(caminhoDocumento, xmlFinal);
 
-    zip.file(caminhoDocumento, novoXml);
     const resultado = await zip.generateAsync({ type: "blob" });
     const url = URL.createObjectURL(resultado);
     const link = document.createElement("a");
-    const mesSeguro = mes.replace(/[^0-9-]/g, "");
-    const grupoSeguro = grupo.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "");
+    const nomeGrupo = grupo.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").toUpperCase();
+    const mes = normalizarData(avaliacoes[0].data).substring(0, 7);
     link.href = url;
-    link.download = `Formularios-Aceitabilidade-${grupoSeguro}-${mesSeguro}.docx`;
+    link.download = `Formularios-Aceitabilidade-${nomeGrupo}-${mes}.docx`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -368,7 +371,6 @@ async function gerarFormulariosWordGrupo(avaliacoesGrupo: Avaliacao[], grupo: st
     alert("Não foi possível gerar os formulários Word. Verifique se o modelo está disponível.");
   }
 }
-
 
 function formatarDataBR(
   data: string
@@ -3744,36 +3746,126 @@ function DashboardResultados({
   avaliacoes: Avaliacao[];
   registros: RegistroCozinha[];
 }) {
+  const meses = [
+    { value: "01", label: "JANEIRO" },
+    { value: "02", label: "FEVEREIRO" },
+    { value: "03", label: "MARÇO" },
+    { value: "04", label: "ABRIL" },
+    { value: "05", label: "MAIO" },
+    { value: "06", label: "JUNHO" },
+    { value: "07", label: "JULHO" },
+    { value: "08", label: "AGOSTO" },
+    { value: "09", label: "SETEMBRO" },
+    { value: "10", label: "OUTUBRO" },
+    { value: "11", label: "NOVEMBRO" },
+    { value: "12", label: "DEZEMBRO" },
+  ];
+
   const [mesSelecionado, setMesSelecionado] = useState(obterDataHoje().substring(0, 7));
-  void registros;
+  const [professoresPorGrupo, setProfessoresPorGrupo] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    let ativo = true;
+
+    async function carregarProfessoresDasTurmas() {
+      try {
+        const { data, error } = await firebaseDb
+          .from("funcionarios")
+          .select("id, nome, login, grupo")
+          .limit(1000);
+
+        if (error) {
+          console.error("Não foi possível carregar os professores por turma:", error);
+          return;
+        }
+
+        const mapa: Record<string, string> = {};
+        for (const funcionario of data ?? []) {
+          const login = normalizarTexto((funcionario as any).login);
+          const grupo = normalizarTexto((funcionario as any).grupo);
+          const nome = String((funcionario as any).nome ?? "").trim();
+
+          // O professor responsável é definido pelo funcionário cujo LOGIN
+          // é de Professor e cujo campo GRUPO referencia a turma.
+          if (!login.includes("professor") || !grupo || !nome || mapa[grupo]) continue;
+          mapa[grupo] = nome;
+        }
+
+        if (ativo) setProfessoresPorGrupo(mapa);
+      } catch (erro) {
+        console.error("Erro ao carregar professores por turma:", erro);
+      }
+    }
+
+    void carregarProfessoresDasTurmas();
+    return () => {
+      ativo = false;
+    };
+  }, []);
+
   const avaliacoesDoMes = avaliacoes.filter(
     (avaliacao) => normalizarData(avaliacao.data).substring(0, 7) === mesSelecionado
   );
-  const totalAvaliacoes = avaliacoesDoMes.length;
-  const totalAlunos = avaliacoesDoMes.reduce((total, avaliacao) => total + Number(avaliacao.alunos || 0), 0);
-  const totalGostaram = avaliacoesDoMes.reduce((total, avaliacao) => total + Number(avaliacao.gostaram || 0), 0);
-  const totalNaoGostaram = avaliacoesDoMes.reduce((total, avaliacao) => total + Number(avaliacao.naoGostaram || 0), 0);
-  const totalRespostas = totalGostaram + totalNaoGostaram;
-  const percentualAceitacao = totalRespostas > 0 ? Math.round((totalGostaram / totalRespostas) * 100) : 0;
-  const mesFormatado = new Date(`${mesSelecionado}-01T12:00:00`).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
 
-  const grupos = Array.from(new Set(avaliacoesDoMes.map((a) => a.grupo).filter(Boolean))).sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true }));
-  const gruposPadrao = ["Grupo 2A", "Grupo 2B", "Grupo 3A", "Grupo 3B"];
-  const gruposParaExibir = Array.from(new Set([...gruposPadrao, ...grupos]));
+  const totalAvaliacoes = avaliacoesDoMes.length;
+  const totalAlunos = avaliacoesDoMes.reduce(
+    (total, avaliacao) => total + Number(avaliacao.alunos || 0),
+    0
+  );
+  const totalGostaram = avaliacoesDoMes.reduce(
+    (total, avaliacao) => total + Number(avaliacao.gostaram || 0),
+    0
+  );
+  const totalNaoGostaram = avaliacoesDoMes.reduce(
+    (total, avaliacao) => total + Number(avaliacao.naoGostaram || 0),
+    0
+  );
+  const totalRespostas = totalGostaram + totalNaoGostaram;
+  const percentualAceitacao = totalRespostas > 0
+    ? Math.round((totalGostaram / totalRespostas) * 100)
+    : 0;
+
+  const mesFormatado = new Date(`${mesSelecionado}-01T12:00:00`).toLocaleDateString(
+    "pt-BR",
+    { month: "long", year: "numeric" }
+  );
+
+  const gruposParaFormulario = ["GRUPO 2A", "GRUPO 2B", "GRUPO 3A", "GRUPO 3B"];
+
+  function baixarFoto(foto: string, nome: string) {
+    const link = document.createElement("a");
+    link.href = foto;
+    link.download = `${nome.replace(/[^a-z0-9-_]/gi, "-")}.jpg`;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
 
   return (
     <section className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-800">Dashboard de Resultados</h2>
-        <p className="mt-1 text-sm text-slate-500">Visão geral das avaliações de {mesFormatado}.</p>
-      </div>
-
-      <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="text-sm font-semibold text-slate-700">Mês dos resultados</p>
-          <p className="text-xs text-slate-500">Selecione o mês para visualizar e gerar os formulários.</p>
+          <h2 className="text-2xl font-bold text-slate-800">Dashboard de Resultados</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Visão geral das avaliações de {mesFormatado} e lista completa das refeições registradas.
+          </p>
         </div>
-        <input type="month" value={mesSelecionado} onChange={(e) => setMesSelecionado(e.target.value)} className="rounded-md border border-black px-3 py-2" />
+        <div className="min-w-[220px]">
+          <label className="mb-1 block text-sm font-semibold text-slate-700">Mês</label>
+          <select
+            value={mesSelecionado}
+            onChange={(event) => setMesSelecionado(event.target.value)}
+            className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 outline-none focus:border-emerald-500"
+          >
+            {meses.map((mes) => (
+              <option key={mes.value} value={`${obterDataHoje().substring(0, 4)}-${mes.value}`}>
+                {mes.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -3792,60 +3884,117 @@ function DashboardResultados({
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h3 className="mb-4 text-lg font-bold text-slate-800">Formulários por turma</h3>
-        <p className="mb-4 text-sm text-slate-500">Cada botão gera um único arquivo Word da turma, com os registros do mês selecionado. São colocados dois formulários por página.</p>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {gruposParaExibir.map((grupo) => {
-            const avaliacoesGrupo = avaliacoesDoMes
-              .filter((avaliacao) => normalizarTexto(avaliacao.grupo) === normalizarTexto(grupo))
-              .sort((a, b) => normalizarData(a.data).localeCompare(normalizarData(b.data)) || Number(a.id) - Number(b.id));
+        <h3 className="text-lg font-bold text-slate-800">Formulários por turma</h3>
+        <p className="mt-1 text-sm text-slate-500">
+          Cada botão gera um único arquivo Word da turma, com os registros do mês selecionado. São colocados dois formulários por página.
+        </p>
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {gruposParaFormulario.map((grupo) => {
+            const registrosDoGrupo = avaliacoesDoMes.filter(
+              (avaliacao) => normalizarTexto(avaliacao.grupo) === normalizarTexto(grupo)
+            );
+            const professor = professoresPorGrupo[normalizarTexto(grupo)] || "";
+
             return (
-              <button
-                key={grupo}
-                type="button"
-                disabled={avaliacoesGrupo.length === 0}
-                onClick={() => void gerarFormulariosWordGrupo(avaliacoesGrupo, grupo, mesSelecionado)}
-                className="rounded-xl border border-slate-200 bg-white px-4 py-4 text-left shadow-sm transition hover:border-blue-400 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <span className="block font-bold text-slate-800">📄 Baixar Word {grupo}</span>
-                <span className="mt-1 block text-xs text-slate-500">{avaliacoesGrupo.length} formulário(s) no mês</span>
-              </button>
+              <div key={grupo} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <p className="font-bold text-slate-800">{grupo}</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {registrosDoGrupo.length} formulário(s) no mês
+                </p>
+                <p className="mt-1 truncate text-xs text-slate-500">
+                  Professor(a): {professor || "não localizado"}
+                </p>
+                <button
+                  type="button"
+                  disabled={registrosDoGrupo.length === 0}
+                  onClick={() => void gerarFormulariosWord(registrosDoGrupo, professor, grupo)}
+                  className="mt-3 w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  📄 Baixar Word {grupo}
+                </button>
+              </div>
             );
           })}
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-md border border-black bg-white shadow-sm" style={{ fontFamily: "Arial, Helvetica, sans-serif" }}>
-        <div className="border-b border-black bg-[#DDEBF7] px-4 py-4">
-          <h2 className="text-center text-lg font-extrabold uppercase">REGISTROS DO TESTE DE ACEITABILIDADE — {mesFormatado.toUpperCase()}</h2>
-        </div>
-        <div className="w-full overflow-x-auto">
-          <table className="min-w-[1100px] w-full border-collapse text-sm">
-            <thead>
-              <tr className="bg-white">
-                {["UNIDADE ESCOLAR", "TURMA OU GRUPO", "TURNO", "DATA DO TESTE", "NOME DA PREPARAÇÃO", "Nº DE ALUNOS QUE APROVARAM", "Nº DE ALUNOS QUE NÃO GOSTARAM", "PROFESSOR RESPONSÁVEL"].map((cabecalho) => (
-                  <th key={cabecalho} className="border border-black px-2 py-2 text-center font-bold">{cabecalho}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {avaliacoesDoMes.length === 0 ? (
-                <tr><td colSpan={8} className="border border-black px-4 py-8 text-center">NÃO HÁ REGISTROS PARA O MÊS SELECIONADO.</td></tr>
-              ) : avaliacoesDoMes.map((avaliacao) => (
-                <tr key={avaliacao.id}>
-                  <td className="border border-black px-2 py-2">CNI MARIA ANTONIA</td>
-                  <td className="border border-black px-2 py-2 text-center">{avaliacao.grupo || ""}</td>
-                  <td className="border border-black px-2 py-2 text-center">INTEGRAL</td>
-                  <td className="border border-black px-2 py-2 text-center">{formatarDataBR(avaliacao.data)}</td>
-                  <td className="border border-black px-2 py-2">{avaliacao.preparacao || ""}</td>
-                  <td className="border border-black px-2 py-2 text-center">{Math.max(0, Number(avaliacao.gostaram) || 0)}</td>
-                  <td className="border border-black px-2 py-2 text-center">{Math.max(0, Number(avaliacao.naoGostaram) || 0)}</td>
-                  <td className="border border-black px-2 py-2">{avaliacao.nomeResponsavel || ""}</td>
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        {registros.length === 0 ? (
+          <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">Nenhuma refeição registrada.</p>
+        ) : (
+          <div className="max-h-[calc(100dvh-20rem)] overflow-x-auto overflow-y-scroll md:max-h-none">
+            <table className="min-w-[760px] text-left text-sm">
+              <thead className="border-b border-slate-200 text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="px-3 py-3">Data</th>
+                  <th className="px-3 py-3">Grupo</th>
+                  <th className="px-3 py-3">Refeição / preparação</th>
+                  <th className="px-3 py-3">Fotos</th>
+                  <th className="px-3 py-3">Avaliação</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {registros
+                  .filter((registro) => normalizarData(registro.data).substring(0, 7) === mesSelecionado)
+                  .sort((a, b) => normalizarData(b.data).localeCompare(normalizarData(a.data)) || Number(b.id) - Number(a.id))
+                  .map((registro) => {
+                    const avaliacao = avaliacoesDoMes.find((item) => {
+                      if (Number(item.registroId) > 0) return Number(item.registroId) === Number(registro.id);
+                      return (
+                        normalizarData(item.data) === normalizarData(registro.data) &&
+                        normalizarTexto(item.grupo) === normalizarTexto(registro.grupo) &&
+                        normalizarTexto(item.refeicao) === normalizarTexto(registro.refeicao) &&
+                        normalizarTexto(item.preparacao) === normalizarTexto(registro.servida)
+                      );
+                    });
+
+                    return (
+                      <tr key={registro.id} className="align-top hover:bg-slate-50">
+                        <td className="whitespace-nowrap px-3 py-4 text-slate-600">{formatarDataBR(registro.data)}</td>
+                        <td className="px-3 py-4 text-slate-600">{registro.grupo || "Não informado"}</td>
+                        <td className="min-w-56 px-3 py-4">
+                          <p className="font-semibold text-slate-800">{registro.refeicao}</p>
+                          <p className="text-slate-600">{registro.servida || "Não informado"}</p>
+                          <p className="text-xs text-slate-400">Horário: {registro.horario || "—"}</p>
+                        </td>
+                        <td className="min-w-72 px-3 py-4">
+                          <div className="flex flex-wrap gap-4">
+                            <div className="w-28">
+                              <p className="mb-1 text-xs font-semibold text-slate-500">Cozinha</p>
+                              {registro.foto ? (
+                                <>
+                                  <img src={registro.foto} alt="Foto da cozinha" className="h-24 w-28 rounded-lg border object-cover" />
+                                  <button type="button" onClick={() => baixarFoto(registro.foto as string, `cozinha-${registro.id}`)} className="mt-1 text-xs font-semibold text-emerald-700">Baixar</button>
+                                </>
+                              ) : <span className="text-xs text-slate-400">Sem foto</span>}
+                            </div>
+                            <div className="w-28">
+                              <p className="mb-1 text-xs font-semibold text-slate-500">Professor</p>
+                              {avaliacao?.foto ? (
+                                <>
+                                  <img src={avaliacao.foto} alt="Foto do professor" className="h-24 w-28 rounded-lg border object-cover" />
+                                  <button type="button" onClick={() => baixarFoto(avaliacao.foto as string, `professor-${avaliacao.id}`)} className="mt-1 text-xs font-semibold text-emerald-700">Baixar</button>
+                                </>
+                              ) : <span className="text-xs text-slate-400">Sem foto</span>}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="min-w-44 px-3 py-4">
+                          {avaliacao ? (
+                            <>
+                              <p className="font-semibold text-slate-800">{avaliacao.nomeResponsavel || "Responsável não informado"}</p>
+                              <p className="text-xs text-slate-500">Gostaram: {avaliacao.gostaram} | Não gostaram: {avaliacao.naoGostaram}</p>
+                              <p className="text-xs text-slate-500">Alunos: {avaliacao.alunos}</p>
+                            </>
+                          ) : <span className="text-xs text-slate-400">Ainda não avaliado</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </section>
   );
@@ -4805,42 +4954,6 @@ const exportarRegistros = async () => {
           </strong>
         </div>
       </div>
-      <div className="mt-8 overflow-hidden rounded-md border border-black bg-white shadow-sm" style={{ fontFamily: "Arial, Helvetica, sans-serif" }}>
-        <div className="border-b border-black bg-[#DDEBF7] px-4 py-4">
-          <h2 className="text-center text-lg font-extrabold uppercase">
-            REGISTROS DO TESTE DE ACEITABILIDADE
-          </h2>
-         
-        </div>
-        <div className="w-full overflow-x-auto">
-          <table className="min-w-[1400px] w-full border-collapse text-sm">
-            <thead>
-              <tr className="bg-white">
-                {["UNIDADE ESCOLAR", "TURMA OU GRUPO", "TURNO", "DATA DO TESTE", "NOME DA PREPARAÇÃO", "Nº DE ALUNOS QUE APROVARAM", "Nº DE ALUNOS QUE NÃO GOSTARAM"].map((cabecalho) => (
-                  <th key={cabecalho} className="border border-black px-2 py-2 text-center font-bold">{cabecalho}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {avaliacoes.filter((avaliacao) => normalizarData(avaliacao.data).substring(0, 7) === mesSelecionado).sort((a, b) => normalizarData(a.data).localeCompare(normalizarData(b.data))).map((avaliacao, index) => (
-                <tr key={`registro-${index}`}>
-                  <td className="border border-black px-2 py-2">CNI MARIA ANTONIA</td>
-                  <td className="border border-black px-2 py-2 text-center">{avaliacao.grupo || ""}</td>
-                  <td className="border border-black px-2 py-2 text-center">INTEGRAL</td>
-                  <td className="border border-black px-2 py-2 text-center">{formatarDataBR(avaliacao.data)}</td>
-                  <td className="border border-black px-2 py-2">{avaliacao.preparacao || ""}</td>
-                  <td className="border border-black px-2 py-2 text-center">{Math.max(0, Number(avaliacao.gostaram) || 0)}</td>
-                  <td className="border border-black px-2 py-2 text-center">{Math.max(0, Number(avaliacao.naoGostaram) || 0)}</td>
-                </tr>
-              ))}
-              {avaliacoes.filter((avaliacao) => normalizarData(avaliacao.data).substring(0, 7) === mesSelecionado).length === 0 && (
-                <tr><td colSpan={7} className="border border-black px-4 py-8 text-center">NÃO HÁ REGISTROS PARA O MÊS SELECIONADO.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
     </section>
   );
 }
