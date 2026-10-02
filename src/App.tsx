@@ -279,6 +279,19 @@ function obterBlocoPrincipalDoFormulario(xml: string): { cabecalho: string; bloc
   return { cabecalho: corpo.slice(0, inicio), bloco: corpo.slice(inicio, pos), sectPr: sectPrMatch[0] };
 }
 
+<<<<<<< HEAD
+=======
+function inserirDepoisDoParagrafo(xml: string, textoDoParagrafo: string, conteudo: string): string {
+  const indiceTexto = xml.indexOf(textoDoParagrafo);
+  if (indiceTexto < 0) return xml;
+  const inicioParagrafo = xml.lastIndexOf("<w:p", indiceTexto);
+  const fimParagrafo = xml.indexOf("</w:p>", indiceTexto);
+  if (inicioParagrafo < 0 || fimParagrafo < 0) return xml;
+  const fim = fimParagrafo + "</w:p>".length;
+  return xml.slice(0, fim) + conteudo + xml.slice(fim);
+}
+
+>>>>>>> 7bbd5d41eb9940b264ef48c89753751ae1c2ba13
 function preencherBlocoFormulario(bloco: string, avaliacao: Avaliacao, professor: string, grupo: string): string {
   const unidade = "CNI MARIA ANTONIA";
   const data = formatarDataBR(avaliacao.data);
@@ -3841,6 +3854,7 @@ function DashboardResultados({
     { month: "long", year: "numeric" }
   );
 
+<<<<<<< HEAD
   // Exibe um botão de Word para cada turma que realmente possui registros no período,
   // mantendo também as turmas padrão para que o botão continue visível mesmo quando
   // ainda não há registros no mês selecionado.
@@ -3853,6 +3867,9 @@ function DashboardResultados({
       [...gruposPadrao, ...gruposEncontrados].map((grupo) => [normalizarTexto(grupo), grupo])
     ).values()
   );
+=======
+  const gruposParaFormulario = ["GRUPO 2A", "GRUPO 2B", "GRUPO 3A", "GRUPO 3B"];
+>>>>>>> 7bbd5d41eb9940b264ef48c89753751ae1c2ba13
 
   function baixarFoto(foto: string, nome: string) {
     const link = document.createElement("a");
@@ -3930,6 +3947,7 @@ function DashboardResultados({
                   type="button"
                   disabled={registrosDoGrupo.length === 0}
                   onClick={() => void gerarFormulariosWord(registrosDoGrupo, professor, grupo)}
+<<<<<<< HEAD
                   className="mt-3 w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
                   title={
                     registrosDoGrupo.length === 0
@@ -3938,6 +3956,11 @@ function DashboardResultados({
                   }
                 >
                   📄 Baixar Word — {grupo}
+=======
+                  className="mt-3 w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  📄 Baixar Word {grupo}
+>>>>>>> 7bbd5d41eb9940b264ef48c89753751ae1c2ba13
                 </button>
               </div>
             );
