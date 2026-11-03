@@ -3760,8 +3760,8 @@ function DashboardResultados({
                   <th className="px-3 py-3">Data</th>
                   <th className="px-3 py-3">Grupo</th>
                   <th className="px-3 py-3">Refeição / preparação</th>
-                  <th className="px-3 py-3">Fotos</th>
                   <th className="px-3 py-3">Avaliação</th>
+                  <th className="px-3 py-3">Fotos</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
