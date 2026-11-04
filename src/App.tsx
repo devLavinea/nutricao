@@ -15,6 +15,7 @@ import type {
 } from "react";
 
 import { firebaseDb } from "./lib/firebase";
+import { ouvirMensagensPush, registrarTokenPush } from "./lib/push";
 import prefeituraLogo from "./assets/prefeitura.png";
 import rodapeSecretaria from "./assets/rodape-secretaria.png";
 
@@ -796,40 +797,30 @@ function App() {
     }
 
     try {
-      let permissao = Notification.permission;
-
-      if (permissao === "default") {
-        permissao = await Notification.requestPermission();
-      }
+      const permissao =
+        Notification.permission === "default"
+          ? await Notification.requestPermission()
+          : Notification.permission;
 
       if (permissao === "granted") {
         setNotificacoesAtivas(true);
         localStorage.setItem("notificacoes_ativas", "sim");
-
-        new Notification("Alimentação Escolar", {
-          body:
-            perfil === "cozinha"
-              ? "Notificações ativadas. Você receberá lembretes para registrar as refeições."
-              : "Notificações ativadas. Você receberá lembretes sobre as avaliações.",
-        });
+        alert(
+          "Permissão concedida! Depois do login, este dispositivo será cadastrado para receber os avisos do seu perfil."
+        );
         return;
       }
 
       setNotificacoesAtivas(false);
       localStorage.removeItem("notificacoes_ativas");
-
-      if (permissao === "denied") {
-        alert(
-          "As notificações estão bloqueadas neste dispositivo. Para ativá-las, permita as notificações nas configurações do navegador ou do celular."
-        );
-      } else {
-        alert(
-          "As notificações não foram autorizadas. Você pode tentar ativá-las novamente nas configurações do navegador."
-        );
-      }
+      alert(
+        permissao === "denied"
+          ? "As notificações estão bloqueadas neste dispositivo. Permita-as nas configurações do navegador ou do celular."
+          : "As notificações não foram autorizadas."
+      );
     } catch (erro) {
       console.error("ERRO AO ATIVAR NOTIFICAÇÕES:", erro);
-      setNotificacoesAtivas(Notification.permission === "granted");
+      setNotificacoesAtivas(false);
       alert(
         "Não foi possível ativar as notificações. Verifique as permissões do navegador ou do celular."
       );
@@ -864,74 +855,49 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!logado || !perfil) {
-      return;
-    }
+    if (!logado || !perfil || !funcionarioLogado) return;
+    if (!notificacoesAtivas || Notification.permission !== "granted") return;
 
-    if (!notificacoesAtivas) {
-      return;
-    }
+    let cancelado = false;
+    let cancelarMensagens: (() => void) | undefined;
 
-    if (!("Notification" in window)) {
-      return;
-    }
+    const configurarPush = async () => {
+      try {
+        await registrarTokenPush({
+          id: funcionarioLogado.id,
+          nome: funcionarioLogado.nome,
+          login: funcionarioLogado.login,
+          perfil,
+        });
 
-    if (
-      Notification.permission !==
-      "granted"
-    ) {
-      return;
-    }
+        if (cancelado) return;
 
-    const chaveHoje =
-      `notificacao_${perfil}_${obterDataHoje()}`;
-
-    if (
-      localStorage.getItem(
-        chaveHoje
-      )
-    ) {
-      return;
-    }
-
-    const timer =
-      window.setTimeout(() => {
-        if (perfil === "cozinha") {
-          new Notification(
-            "Lembrete da cozinha 🍽️",
-            {
-              body:
-                "Não esqueça de registrar a refeição que foi realmente servida hoje.",
-            }
+        cancelarMensagens = await ouvirMensagensPush((mensagem) => {
+          if (cancelado) return;
+          new Notification(mensagem.title || "Alimentação Escolar", {
+            body: mensagem.body || "Há um novo aviso no sistema.",
+            icon: "/icon-192.png",
+          });
+        });
+      } catch (erro) {
+        console.error("Não foi possível cadastrar este dispositivo no FCM:", erro);
+        if (!cancelado) {
+          alert(
+            erro instanceof Error
+              ? erro.message
+              : "Não foi possível configurar as notificações push."
           );
         }
+      }
+    };
 
-        if (perfil === "professor") {
-          new Notification(
-            "Lembrete dos professores 👩‍🏫",
-            {
-              body:
-                "Confira os registros da cozinha e faça as avaliações de aceitabilidade disponíveis.",
-            }
-          );
-        }
-
-        localStorage.setItem(
-          chaveHoje,
-          "sim"
-        );
-      }, 3000);
+    void configurarPush();
 
     return () => {
-      window.clearTimeout(
-        timer
-      );
+      cancelado = true;
+      cancelarMensagens?.();
     };
-  }, [
-    logado,
-    perfil,
-    notificacoesAtivas,
-  ]);
+  }, [logado, perfil, funcionarioLogado, notificacoesAtivas]);
 
   /* =========================================================
      LOGIN
@@ -1379,6 +1345,15 @@ function App() {
                 funcionarioLogado?.nome
               )}
             </p>
+            {!notificacoesAtivas && (
+              <button
+                type="button"
+                onClick={ativarNotificacoes}
+                className="mt-3 w-full rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white"
+              >
+                🔔 Ativar notificações
+              </button>
+            )}
           </div>
 
           <button
@@ -1404,6 +1379,15 @@ function App() {
                   funcionarioLogado?.nome
                 )}
               </p>
+              {!notificacoesAtivas && (
+                <button
+                  type="button"
+                  onClick={ativarNotificacoes}
+                  className="mt-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white"
+                >
+                  🔔 Ativar notificações
+                </button>
+              )}
             </div>
 
             <button

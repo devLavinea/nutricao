@@ -1,4 +1,4 @@
-const CACHE_NAME = "alimentacao-escolar-v3";
+const CACHE_NAME = "alimentacao-escolar-v4";
 
 const APP_SHELL = [
   "/",
@@ -108,31 +108,38 @@ self.addEventListener("fetch", (event) => {
 });
 
 self.addEventListener("push", (event) => {
-  let data = {
-    title: "Alimentação Escolar",
-    body: "Há uma nova tarefa no sistema.",
-    icon: "/icon-192.png",
-    badge: "/icon-192.png",
-    url: "/",
-  };
+  let payload = {};
 
   if (event.data) {
     try {
-      data = {
-        ...data,
-        ...event.data.json(),
-      };
+      payload = event.data.json();
     } catch {
-      data.body = event.data.text();
+      payload = { notification: { body: event.data.text() } };
     }
   }
 
+  // O FCM entrega os dados de notificação dentro de "notification".
+  const notification = payload.notification || payload.data || payload;
+  const title = notification.title || "Alimentação Escolar";
+  const body =
+    notification.body ||
+    "Verifique as informações disponíveis no sistema.";
+  const icon = notification.icon || "/icon-192.png";
+  const badge = notification.badge || "/icon-192.png";
+  const url =
+    payload.fcmOptions?.link ||
+    payload.data?.url ||
+    notification.url ||
+    "/";
+
   event.waitUntil(
-    self.registration.showNotification(data.title, {
-      body: data.body,
-      icon: data.icon,
-      badge: data.badge,
-      data: { url: data.url },
+    self.registration.showNotification(title, {
+      body,
+      icon,
+      badge,
+      data: { url },
+      tag: payload.data?.tag || "gestao-alimentar",
+      renotify: false,
     })
   );
 });
