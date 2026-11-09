@@ -874,9 +874,20 @@ function App() {
 
         cancelarMensagens = await ouvirMensagensPush((mensagem) => {
           if (cancelado) return;
-          new Notification(mensagem.title || "Alimentação Escolar", {
-            body: mensagem.body || "Há um novo aviso no sistema.",
-            icon: "/icon-192.png",
+          // No celular, a notificação via Service Worker é mais confiável
+          // do que o construtor Notification, especialmente em PWA instalado.
+          void navigator.serviceWorker.ready.then((registration) =>
+            registration.showNotification(
+              mensagem.title || "Alimentação Escolar",
+              {
+                body: mensagem.body || "Há um novo aviso no sistema.",
+                icon: "/icon-192.png",
+                badge: "/icon-192.png",
+                tag: "aviso-alimentacao-escolar",
+              }
+            )
+          ).catch((erro) => {
+            console.error("Não foi possível exibir a notificação:", erro);
           });
         });
       } catch (erro) {

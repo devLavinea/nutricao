@@ -114,32 +114,35 @@ self.addEventListener("push", (event) => {
     try {
       payload = event.data.json();
     } catch {
-      payload = { notification: { body: event.data.text() } };
+      payload = { body: event.data.text() };
     }
   }
 
-  // O FCM entrega os dados de notificação dentro de "notification".
-  const notification = payload.notification || payload.data || payload;
-  const title = notification.title || "Alimentação Escolar";
+  // O Firebase Cloud Messaging envia título e texto dentro de
+  // payload.notification. Mensagens de dados podem vir em payload.data.
+  const notification = payload.notification || {};
+  const data = payload.data || {};
+  const title =
+    notification.title || payload.title || data.title || "Alimentação Escolar";
   const body =
-    notification.body ||
-    "Verifique as informações disponíveis no sistema.";
-  const icon = notification.icon || "/icon-192.png";
-  const badge = notification.badge || "/icon-192.png";
+    notification.body || payload.body || data.body ||
+    "Há um novo aviso no sistema.";
+  const icon =
+    notification.icon || payload.icon || data.icon || "/icon-192.png";
+  const badge =
+    notification.badge || payload.badge || data.badge || "/icon-192.png";
   const url =
-    payload.fcmOptions?.link ||
-    payload.data?.url ||
-    notification.url ||
-    "/";
+    notification.click_action || payload.url || data.url || "/";
+  const tag = notification.tag || payload.tag || data.tag || "aviso-alimentacao-escolar";
 
   event.waitUntil(
     self.registration.showNotification(title, {
       body,
       icon,
       badge,
-      data: { url },
-      tag: payload.data?.tag || "gestao-alimentar",
+      tag,
       renotify: false,
+      data: { url },
     })
   );
 });
@@ -150,22 +153,21 @@ self.addEventListener("notificationclick", (event) => {
   const url = event.notification.data?.url || "/";
 
   event.waitUntil(
-    clients.matchAll({
+    self.clients.matchAll({
       type: "window",
       includeUncontrolled: true,
-    }).then((clientList) => {
+    }).then(async (clientList) => {
       for (const client of clientList) {
         if ("focus" in client) {
-          client.focus();
           if ("navigate" in client) {
-            client.navigate(url);
+            await client.navigate(url);
           }
-          return;
+          return client.focus();
         }
       }
 
-      if (clients.openWindow) {
-        return clients.openWindow(url);
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(url);
       }
     })
   );

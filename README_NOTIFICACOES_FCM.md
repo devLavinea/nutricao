@@ -102,3 +102,18 @@ conforme o planejamento ou que sofreram alterações.
 - Se a mesma pessoa usar vários dispositivos, cada dispositivo deverá ser ativado separadamente.
 - O lembrete não depende de o usuário estar logado no horário do envio, pois o token fica salvo
   no Firestore até ser removido ou invalidado.
+
+## Correção aplicada — notificações com o PWA fechado
+
+O Service Worker agora interpreta corretamente o formato enviado pelo Firebase Cloud Messaging:
+`notification.title`, `notification.body` e `data.url`. Antes, o código procurava `title` e `body`
+na raiz do payload, podendo exibir apenas o texto genérico. Também foi atualizada a versão do cache
+para `alimentacao-escolar-v4`, garantindo a atualização do Service Worker nos dispositivos.
+
+Ao receber uma mensagem com o aplicativo aberto, o sistema também usa
+`ServiceWorkerRegistration.showNotification()`, que é a forma recomendada para exibir notificações
+em PWAs móveis.
+
+Após publicar, cada aparelho deve abrir o PWA uma vez para atualizar o Service Worker e manter
+as notificações autorizadas. O envio com o PWA fechado depende da Cloud Function estar publicada,
+do token FCM já cadastrado, da chave VAPID configurada e de conexão com a internet.
